@@ -738,126 +738,105 @@ def mostrar_resultado(df, label="resultado"):
 
 
 # ===================== INTERFACE STREAMLIT =====================
-aba1, aba2, aba3, aba4, aba5, aba6 = st.tabs([
-    "Scalping",
-    "Scalping Rapido",
-    "Swing Hibrido",
-    "Swing RR",
-    "Swing Pro",
-    "Swing Expandido"
-])
 
-# --- ABA 1: Scalping ---
-with aba1:
-    st.subheader("Scanner Scalping (5m + 15m + 1H)")
+st.markdown("---")
+st.subheader("⚙️ Painel de Controle Global")
+
+col_radio, col_btn = st.columns([3, 1])
+with col_radio:
+    lista_global = st.radio(
+        "Lista de ativos para todos os scanners:",
+        ["Todos (Blue + Mid/Small)", "Blue Chips"],
+        horizontal=True,
+        key="sel_global"
+    )
+with col_btn:
+    rodar_todos = st.button("🚀 Rodar Todos os Scanners", type="primary", key="btn_rodar_todos", use_container_width=True)
+
+ativos_global = ATIVOS_BLUE_CHIPS if lista_global == "Blue Chips" else ATIVOS_COMPLETO
+
+st.markdown("---")
+
+# ---- SCANNER 1: Scalping ----
+with st.expander("📊 Scanner Scalping (5m + 15m + 1H)", expanded=True):
     st.caption("Filtros: Volume alto + Acima VWAP + Tendencia 1H + RR claro")
-    col_sel1, col_btn1 = st.columns([3, 1])
-    with col_sel1:
-        lista_scalping = st.radio("Lista de ativos:", ["Todos (Blue + Mid/Small)", "Blue Chips"], horizontal=True, key="sel_scalping")
-    ativos_scalping = ATIVOS_BLUE_CHIPS if lista_scalping == "Blue Chips" else ATIVOS_COMPLETO
-
-    if st.button("Rodar Scanner Scalping", type="primary", key="btn_scalping"):
-        with st.spinner("Analisando mercado..."):
-            df = scanner_scalping_melhorado(ativos_scalping)
-            if not df.empty:
-                df = df.sort_values('Score', ascending=False)
-                mostrar_resultado(df, label="scalping")
-                st.success(f"Encontradas **{len(df)}** oportunidades de scalping!")
+    resultado_scalping = st.empty()
+    if rodar_todos or st.button("▶ Rodar Scalping", key="btn_scalping"):
+        with st.spinner("Analisando Scalping..."):
+            df_sc = scanner_scalping_melhorado(ativos_global)
+            if not df_sc.empty:
+                df_sc = df_sc.sort_values('Score', ascending=False)
+                mostrar_resultado(df_sc, label="scalping")
+                st.success(f"Encontradas **{len(df_sc)}** oportunidades de scalping!")
             else:
                 st.warning("Nenhuma oportunidade forte no momento.")
 
-# --- ABA 2: Scalping Rapido ---
-with aba2:
-    st.subheader("Scanner Scalping Rapido (5m + 15m + 1m)")
+# ---- SCANNER 2: Scalping Rapido ----
+with st.expander("⚡ Scanner Scalping Rapido (5m + 15m + 1m)", expanded=True):
     st.caption("Filtros reforçados: Volume alto + Acima VWAP + Tendencia 15m + Timing 1m")
-    col_sel2, col_btn2 = st.columns([3, 1])
-    with col_sel2:
-        lista_scalping_r = st.radio("Lista de ativos:", ["Todos (Blue + Mid/Small)", "Blue Chips"], horizontal=True, key="sel_scalping_r")
-    ativos_scalping_r = ATIVOS_BLUE_CHIPS if lista_scalping_r == "Blue Chips" else ATIVOS_COMPLETO
-
-    if st.button("Rodar Scanner Scalping Rapido", type="primary", key="btn_scalping_r"):
-        with st.spinner("Analisando mercado..."):
-            df = scanner_scalping_rapido(ativos_scalping_r)
-            if not df.empty:
-                df = df.sort_values('Score', ascending=False)
-                mostrar_resultado(df, label="scalping_rapido")
-                st.success(f"Encontradas **{len(df)}** oportunidades de scalping rapido!")
+    if rodar_todos or st.button("▶ Rodar Scalping Rapido", key="btn_scalping_r"):
+        with st.spinner("Analisando Scalping Rapido..."):
+            df_sr = scanner_scalping_rapido(ativos_global)
+            if not df_sr.empty:
+                df_sr = df_sr.sort_values('Score', ascending=False)
+                mostrar_resultado(df_sr, label="scalping_rapido")
+                st.success(f"Encontradas **{len(df_sr)}** oportunidades de scalping rapido!")
             else:
                 st.warning("Nenhuma oportunidade forte no momento.")
 
-# --- ABA 3: Swing Hibrido ---
-with aba3:
-    st.subheader("Scanner Swing Hibrido (Daily + 1H + 30M)")
+# ---- SCANNER 3: Swing Hibrido ----
+with st.expander("🔀 Scanner Swing Hibrido (Daily + 1H + 30M)", expanded=True):
     st.caption("Filtros reforçados: Daily forte + Liquidez + Alinhamento multi-TF")
-    col_sel3, col_btn3 = st.columns([3, 1])
-    with col_sel3:
-        lista_swing_h = st.radio("Lista de ativos:", ["Todos (Blue + Mid/Small)", "Blue Chips"], horizontal=True, key="sel_swing_h")
-    ativos_swing_h = ATIVOS_BLUE_CHIPS if lista_swing_h == "Blue Chips" else ATIVOS_COMPLETO
-
-    if st.button("Rodar Scanner Swing Hibrido", type="primary", key="btn_swing_h"):
-        with st.spinner("Analisando mercado..."):
-            df = scanner_swing_hibrido(ativos_swing_h)
-            if not df.empty:
-                df = df.sort_values('Score Total', ascending=False)
-                mostrar_resultado(df, label="swing_hibrido")
-                st.success(f"Encontradas **{len(df)}** oportunidades de swing trade!")
+    if rodar_todos or st.button("▶ Rodar Swing Hibrido", key="btn_swing_h"):
+        with st.spinner("Analisando Swing Hibrido..."):
+            df_sh = scanner_swing_hibrido(ativos_global)
+            if not df_sh.empty:
+                df_sh = df_sh.sort_values('Score Total', ascending=False)
+                mostrar_resultado(df_sh, label="swing_hibrido")
+                st.success(f"Encontradas **{len(df_sh)}** oportunidades de swing trade!")
             else:
                 st.warning("Nenhum ativo atendeu aos criterios rigorosos no momento.")
 
-# --- ABA 4: Swing RR ---
-with aba4:
-    st.subheader("Scanner Swing Trade + Risk/Reward (Daily + 1H + 30M + Alvos)")
+# ---- SCANNER 4: Swing RR ----
+with st.expander("🎯 Scanner Swing Trade + Risk/Reward (Daily + 1H + 30M + Alvos)", expanded=True):
     st.caption("Filtros reforçados + Suporte/Resistencia + Stop + Alvos 1:2 e 1:3")
-    col_sel4, col_btn4 = st.columns([3, 1])
-    with col_sel4:
-        lista_swing_rr = st.radio("Lista de ativos:", ["Todos (Blue + Mid/Small)", "Blue Chips"], horizontal=True, key="sel_swing_rr")
-    ativos_swing_rr = ATIVOS_BLUE_CHIPS if lista_swing_rr == "Blue Chips" else ATIVOS_COMPLETO
-
-    if st.button("Rodar Scanner Swing RR", type="primary", key="btn_swing_rr"):
-        with st.spinner("Analisando mercado..."):
-            df = scanner_swing_rr(ativos_swing_rr)
-            if not df.empty:
-                df = df.sort_values('Score Total', ascending=False)
-                mostrar_resultado(df, label="swing_rr")
-                st.success(f"Encontradas **{len(df)}** oportunidades com alvos de RR!")
+    if rodar_todos or st.button("▶ Rodar Swing RR", key="btn_swing_rr"):
+        with st.spinner("Analisando Swing RR..."):
+            df_rr = scanner_swing_rr(ativos_global)
+            if not df_rr.empty:
+                df_rr = df_rr.sort_values('Score Total', ascending=False)
+                mostrar_resultado(df_rr, label="swing_rr")
+                st.success(f"Encontradas **{len(df_rr)}** oportunidades com alvos de RR!")
             else:
                 st.warning("Nenhum ativo atendeu aos criterios rigorosos no momento.")
 
-# --- ABA 5: Swing Pro ---
-with aba5:
-    st.subheader("Scanner Swing Trade Profissional (Daily + 1H + 30M)")
+# ---- SCANNER 5: Swing Pro ----
+with st.expander("🏆 Scanner Swing Trade Profissional (Daily + 1H + 30M)", expanded=True):
     st.caption("Filtros: Vol >1.5x | Acima EMA20/50 | ADX>20 | RSI 45-75 | Alinhamento 1H+30M")
-    col_sel5, col_btn5 = st.columns([3, 1])
-    with col_sel5:
-        lista_swing_pro = st.radio("Lista de ativos:", ["Todos (Blue + Mid/Small)", "Blue Chips"], horizontal=True, key="sel_swing_pro")
-    ativos_swing_pro = ATIVOS_BLUE_CHIPS if lista_swing_pro == "Blue Chips" else ATIVOS_COMPLETO
-
-    if st.button("Rodar Scanner Swing Pro", type="primary", key="btn_swing_pro"):
-        with st.spinner("Analisando mercado..."):
-            df = scanner_swing_profissional(ativos_swing_pro)
-            if not df.empty:
-                df = df.sort_values('Score Total', ascending=False)
-                mostrar_resultado(df, label="swing_pro")
-                st.success(f"Encontradas **{len(df)}** oportunidades de swing profissional!")
+    if rodar_todos or st.button("▶ Rodar Swing Pro", key="btn_swing_pro"):
+        with st.spinner("Analisando Swing Pro..."):
+            df_pro = scanner_swing_profissional(ativos_global)
+            if not df_pro.empty:
+                df_pro = df_pro.sort_values('Score Total', ascending=False)
+                mostrar_resultado(df_pro, label="swing_pro")
+                st.success(f"Encontradas **{len(df_pro)}** oportunidades de swing profissional!")
             else:
                 st.warning("Nenhum ativo atendeu todos os criterios no momento.")
 
-# --- ABA 6: Swing Expandido ---
-with aba6:
-    st.subheader("Scanner Swing Expandido (Mid + Small Caps)")
+# ---- SCANNER 6: Swing Expandido ----
+with st.expander("🌐 Scanner Swing Expandido (Blue + Mid/Small Caps)", expanded=True):
     st.caption("Lista atualizada 2026 | Criterios rigorosos + Confluencia 1h/30m")
-
-    if st.button("Rodar Scanner Swing Expandido", type="primary", key="btn_swing_exp"):
-        with st.spinner("Analisando mercado..."):
-            df = scanner_swing_expandido(ATIVOS_COMPLETO)
-            if not df.empty:
-                df = df.sort_values('Score Diario', ascending=False)
-                mostrar_resultado(df, label="swing_expandido")
-                bons = df[df['Confluencia Geral'].isin(['Boa', 'Excelente'])]
+    if rodar_todos or st.button("▶ Rodar Swing Expandido", key="btn_swing_exp"):
+        with st.spinner("Analisando Swing Expandido..."):
+            df_exp = scanner_swing_expandido(ativos_global)
+            if not df_exp.empty:
+                df_exp = df_exp.sort_values('Score Diario', ascending=False)
+                mostrar_resultado(df_exp, label="swing_expandido")
+                bons = df_exp[df_exp['Confluencia Geral'].isin(['Boa', 'Excelente'])]
                 if len(bons) > 0:
-                    st.success(f"Encontradas **{len(df)}** oportunidades. **{len(bons)}** com confluencia Boa/Excelente.")
+                    st.success(f"Encontradas **{len(df_exp)}** oportunidades. **{len(bons)}** com confluencia Boa/Excelente.")
                 else:
-                    st.info(f"Encontradas **{len(df)}** oportunidades, mas nenhuma com confluencia Boa/Excelente.")
+                    st.info(f"Encontradas **{len(df_exp)}** oportunidades, mas nenhuma com confluencia Boa/Excelente.")
             else:
                 st.warning("Nenhum ativo atendeu todos os criterios hoje. Mercado ainda em consolidacao.")
 
