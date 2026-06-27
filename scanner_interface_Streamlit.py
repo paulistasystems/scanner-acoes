@@ -684,7 +684,7 @@ with aba1:
     st.caption("Filtros: Volume alto + Acima VWAP + Tendencia 1H + RR claro")
     col_sel1, col_btn1 = st.columns([3, 1])
     with col_sel1:
-        lista_scalping = st.radio("Lista de ativos:", ["Blue Chips", "Todos (Blue + Mid/Small)"], horizontal=True, key="sel_scalping")
+        lista_scalping = st.radio("Lista de ativos:", ["Todos (Blue + Mid/Small)", "Blue Chips"], horizontal=True, key="sel_scalping")
     ativos_scalping = ATIVOS_BLUE_CHIPS if lista_scalping == "Blue Chips" else ATIVOS_COMPLETO
 
     if st.button("Rodar Scanner Scalping", type="primary", key="btn_scalping"):
@@ -703,7 +703,7 @@ with aba2:
     st.caption("Filtros reforçados: Volume alto + Acima VWAP + Tendencia 15m + Timing 1m")
     col_sel2, col_btn2 = st.columns([3, 1])
     with col_sel2:
-        lista_scalping_r = st.radio("Lista de ativos:", ["Blue Chips", "Todos (Blue + Mid/Small)"], horizontal=True, key="sel_scalping_r")
+        lista_scalping_r = st.radio("Lista de ativos:", ["Todos (Blue + Mid/Small)", "Blue Chips"], horizontal=True, key="sel_scalping_r")
     ativos_scalping_r = ATIVOS_BLUE_CHIPS if lista_scalping_r == "Blue Chips" else ATIVOS_COMPLETO
 
     if st.button("Rodar Scanner Scalping Rapido", type="primary", key="btn_scalping_r"):
@@ -722,7 +722,7 @@ with aba3:
     st.caption("Filtros reforçados: Daily forte + Liquidez + Alinhamento multi-TF")
     col_sel3, col_btn3 = st.columns([3, 1])
     with col_sel3:
-        lista_swing_h = st.radio("Lista de ativos:", ["Blue Chips", "Todos (Blue + Mid/Small)"], horizontal=True, key="sel_swing_h")
+        lista_swing_h = st.radio("Lista de ativos:", ["Todos (Blue + Mid/Small)", "Blue Chips"], horizontal=True, key="sel_swing_h")
     ativos_swing_h = ATIVOS_BLUE_CHIPS if lista_swing_h == "Blue Chips" else ATIVOS_COMPLETO
 
     if st.button("Rodar Scanner Swing Hibrido", type="primary", key="btn_swing_h"):
@@ -741,7 +741,7 @@ with aba4:
     st.caption("Filtros reforçados + Suporte/Resistencia + Stop + Alvos 1:2 e 1:3")
     col_sel4, col_btn4 = st.columns([3, 1])
     with col_sel4:
-        lista_swing_rr = st.radio("Lista de ativos:", ["Blue Chips", "Todos (Blue + Mid/Small)"], horizontal=True, key="sel_swing_rr")
+        lista_swing_rr = st.radio("Lista de ativos:", ["Todos (Blue + Mid/Small)", "Blue Chips"], horizontal=True, key="sel_swing_rr")
     ativos_swing_rr = ATIVOS_BLUE_CHIPS if lista_swing_rr == "Blue Chips" else ATIVOS_COMPLETO
 
     if st.button("Rodar Scanner Swing RR", type="primary", key="btn_swing_rr"):
@@ -760,7 +760,7 @@ with aba5:
     st.caption("Filtros: Vol >1.5x | Acima EMA20/50 | ADX>20 | RSI 45-75 | Alinhamento 1H+30M")
     col_sel5, col_btn5 = st.columns([3, 1])
     with col_sel5:
-        lista_swing_pro = st.radio("Lista de ativos:", ["Blue Chips", "Todos (Blue + Mid/Small)"], horizontal=True, key="sel_swing_pro")
+        lista_swing_pro = st.radio("Lista de ativos:", ["Todos (Blue + Mid/Small)", "Blue Chips"], horizontal=True, key="sel_swing_pro")
     ativos_swing_pro = ATIVOS_BLUE_CHIPS if lista_swing_pro == "Blue Chips" else ATIVOS_COMPLETO
 
     if st.button("Rodar Scanner Swing Pro", type="primary", key="btn_swing_pro"):
