@@ -10,6 +10,7 @@ import pandas as pd
 import yfinance as yf
 import pandas_ta as ta
 from datetime import datetime
+import streamlit.components.v1 as components
 
 st.set_page_config(page_title="Scanner Acoes BR", layout="wide", page_icon="📈")
 st.title("SCANNER CONSOLIDADO DE ACOES - BRASIL")
@@ -668,6 +669,74 @@ def scanner_swing_expandido(ativos):
     progress.progress(1.0, text="Concluido!")
     return pd.DataFrame(resultados)
 
+# ===================== HELPER: COPY TO CLIPBOARD =====================
+def mostrar_resultado(df, label="resultado"):
+    """Exibe o dataframe com botoes de copiar para clipboard e download CSV."""
+    st.dataframe(df, use_container_width=True, hide_index=True)
+
+    csv_str = df.to_csv(index=False)
+    # Botoes lado a lado
+    col_copy, col_dl, _ = st.columns([1, 1, 4])
+
+    with col_dl:
+        st.download_button(
+            label="⬇️ Baixar CSV",
+            data=csv_str.encode("utf-8"),
+            file_name=f"scanner_{label}_{__import__('datetime').datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+            mime="text/csv",
+            key=f"dl_{label}_{id(df)}"
+        )
+
+    with col_copy:
+        # Escapar o CSV para uso seguro em JS
+        escaped = csv_str.replace("\\", "\\\\").replace("`", "\\`").replace("$", "\\$")
+        copy_html = f"""
+        <style>
+            .copy-btn {{
+                background: linear-gradient(135deg, #1e3a5f, #2563eb);
+                color: white;
+                border: none;
+                border-radius: 8px;
+                padding: 6px 14px;
+                font-size: 14px;
+                cursor: pointer;
+                transition: all 0.2s ease;
+                font-family: sans-serif;
+                white-space: nowrap;
+            }}
+            .copy-btn:hover {{
+                background: linear-gradient(135deg, #2563eb, #3b82f6);
+                transform: translateY(-1px);
+                box-shadow: 0 4px 12px rgba(37,99,235,0.4);
+            }}
+            .copy-btn:active {{ transform: scale(0.97); }}
+        </style>
+        <button class="copy-btn" onclick="(function(){{
+            const text = `{escaped}`;
+            navigator.clipboard.writeText(text).then(function() {{
+                const btn = document.querySelector('.copy-btn');
+                btn.innerText = '✅ Copiado!';
+                btn.style.background = 'linear-gradient(135deg, #065f46, #10b981)';
+                setTimeout(() => {{
+                    btn.innerText = '📋 Copiar Tabela';
+                    btn.style.background = 'linear-gradient(135deg, #1e3a5f, #2563eb)';
+                }}, 2500);
+            }}).catch(function() {{
+                const ta = document.createElement('textarea');
+                ta.value = text;
+                document.body.appendChild(ta);
+                ta.select();
+                document.execCommand('copy');
+                document.body.removeChild(ta);
+                const btn = document.querySelector('.copy-btn');
+                btn.innerText = '✅ Copiado!';
+                setTimeout(() => {{ btn.innerText = '📋 Copiar Tabela'; }}, 2500);
+            }});
+        }})()">📋 Copiar Tabela</button>
+        """
+        components.html(copy_html, height=45)
+
+
 # ===================== INTERFACE STREAMLIT =====================
 aba1, aba2, aba3, aba4, aba5, aba6 = st.tabs([
     "Scalping",
@@ -692,7 +761,7 @@ with aba1:
             df = scanner_scalping_melhorado(ativos_scalping)
             if not df.empty:
                 df = df.sort_values('Score', ascending=False)
-                st.dataframe(df, use_container_width=True, hide_index=True)
+                mostrar_resultado(df, label="scalping")
                 st.success(f"Encontradas **{len(df)}** oportunidades de scalping!")
             else:
                 st.warning("Nenhuma oportunidade forte no momento.")
@@ -711,7 +780,7 @@ with aba2:
             df = scanner_scalping_rapido(ativos_scalping_r)
             if not df.empty:
                 df = df.sort_values('Score', ascending=False)
-                st.dataframe(df, use_container_width=True, hide_index=True)
+                mostrar_resultado(df, label="scalping_rapido")
                 st.success(f"Encontradas **{len(df)}** oportunidades de scalping rapido!")
             else:
                 st.warning("Nenhuma oportunidade forte no momento.")
@@ -730,7 +799,7 @@ with aba3:
             df = scanner_swing_hibrido(ativos_swing_h)
             if not df.empty:
                 df = df.sort_values('Score Total', ascending=False)
-                st.dataframe(df, use_container_width=True, hide_index=True)
+                mostrar_resultado(df, label="swing_hibrido")
                 st.success(f"Encontradas **{len(df)}** oportunidades de swing trade!")
             else:
                 st.warning("Nenhum ativo atendeu aos criterios rigorosos no momento.")
@@ -749,7 +818,7 @@ with aba4:
             df = scanner_swing_rr(ativos_swing_rr)
             if not df.empty:
                 df = df.sort_values('Score Total', ascending=False)
-                st.dataframe(df, use_container_width=True, hide_index=True)
+                mostrar_resultado(df, label="swing_rr")
                 st.success(f"Encontradas **{len(df)}** oportunidades com alvos de RR!")
             else:
                 st.warning("Nenhum ativo atendeu aos criterios rigorosos no momento.")
@@ -768,7 +837,7 @@ with aba5:
             df = scanner_swing_profissional(ativos_swing_pro)
             if not df.empty:
                 df = df.sort_values('Score Total', ascending=False)
-                st.dataframe(df, use_container_width=True, hide_index=True)
+                mostrar_resultado(df, label="swing_pro")
                 st.success(f"Encontradas **{len(df)}** oportunidades de swing profissional!")
             else:
                 st.warning("Nenhum ativo atendeu todos os criterios no momento.")
@@ -783,7 +852,7 @@ with aba6:
             df = scanner_swing_expandido(ATIVOS_COMPLETO)
             if not df.empty:
                 df = df.sort_values('Score Diario', ascending=False)
-                st.dataframe(df, use_container_width=True, hide_index=True)
+                mostrar_resultado(df, label="swing_expandido")
                 bons = df[df['Confluencia Geral'].isin(['Boa', 'Excelente'])]
                 if len(bons) > 0:
                     st.success(f"Encontradas **{len(df)}** oportunidades. **{len(bons)}** com confluencia Boa/Excelente.")
