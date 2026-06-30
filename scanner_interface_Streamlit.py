@@ -97,7 +97,7 @@ def scanner_scalping_melhorado(ativos):
                 if preco > safe_float(df15['EMA8'].iloc[-1]): score_15 += 25
                 if preco > safe_float(df15['VWAP'].iloc[-1]): score_15 += 20
 
-            df1h = baixar_dados(symbol, '1h', '15d')
+            df1h = baixar_dados(symbol, '1h', '75d')
             tendencia_1h = "NEUTRA"
             if len(df1h) > 80:
                 df1h['EMA20'] = ta.ema(df1h['Close'], length=20)
@@ -189,7 +189,7 @@ def scanner_scalping_rapido(ativos):
             adx_val = safe_float(adx5['ADX_14'].iloc[-1])
             vwap_val = safe_float(df5['VWAP'].iloc[-1])
 
-            df15 = baixar_dados(symbol, '15m', '3d')
+            df15 = baixar_dados(symbol, '15m', '5d')
             tendencia_15 = "NEUTRA"
             score_15 = 0
             if len(df15) > 100:
@@ -316,10 +316,10 @@ def scanner_swing_hibrido(ativos):
             if not (47 < daily_rsi < 73): continue
             if preco <= safe_float(df_d['EMA50'].iloc[-1]): continue
 
-            df_h = baixar_dados(symbol, '1h', '60d')
+            df_h = baixar_dados(symbol, '1h', '75d')
             h_score, h_info, h_adx, h_rsi, h_vol_ratio, _ = analisar_timeframe_swing(df_h, "1H") if len(df_h) > 180 else (0, "", 0, 0, 0, 0)
 
-            df_30 = baixar_dados(symbol, '30m', '15d')
+            df_30 = baixar_dados(symbol, '30m', '45d')
             score_30 = 0
             if len(df_30) > 200:
                 df_30['EMA9'] = ta.ema(df_30['Close'], length=9)
@@ -372,10 +372,10 @@ def scanner_swing_rr(ativos):
             if not (47 < daily_rsi < 73): continue
             if preco <= safe_float(df_d['EMA50'].iloc[-1]): continue
 
-            df_h = baixar_dados(symbol, '1h', '60d')
+            df_h = baixar_dados(symbol, '1h', '75d')
             h_score, h_info, h_adx, h_rsi, h_vol_ratio, _ = analisar_timeframe_swing(df_h, "1H") if len(df_h) > 180 else (0, "", 0, 0, 0, 0)
 
-            df_30 = baixar_dados(symbol, '30m', '15d')
+            df_30 = baixar_dados(symbol, '30m', '45d')
             score_30 = 0
             if len(df_30) > 200:
                 df_30['EMA9'] = ta.ema(df_30['Close'], length=9)
@@ -478,11 +478,11 @@ def scanner_swing_profissional(ativos):
 
             preco = safe_float(df_daily.iloc[-1]['Close'])
 
-            df_1h = baixar_dados(symbol, '1h', '60d')
+            df_1h = baixar_dados(symbol, '1h', '75d')
             res_h = analisar_tf(df_1h, "1H") if len(df_1h) >= 50 else None
             h1_score, h1_tend, h1_rsi, h1_adx, h1_macd, _, _, _ = res_h if res_h else (0, "NEUTRA", 0, 0, 0, 0, 0, 0)
 
-            df_30m = baixar_dados(symbol, '30m', '15d')
+            df_30m = baixar_dados(symbol, '30m', '45d')
             res_30 = analisar_tf(df_30m, "30M") if len(df_30m) >= 50 else None
             m30_score, m30_tend, m30_rsi, m30_adx, m30_macd, _, _, _ = res_30 if res_30 else (0, "NEUTRA", 0, 0, 0, 0, 0, 0)
 
@@ -739,6 +739,12 @@ def mostrar_resultado(df, label="resultado"):
 
 # ===================== INTERFACE STREAMLIT =====================
 
+# Inicialização do Session State para guardar os resultados dos scanners
+scanners_keys = ['df_sc', 'df_sr', 'df_sh', 'df_rr', 'df_pro', 'df_exp']
+for key in scanners_keys:
+    if key not in st.session_state:
+        st.session_state[key] = None
+
 st.markdown("---")
 st.subheader("⚙️ Painel de Controle Global")
 
@@ -750,6 +756,16 @@ with col_radio:
         horizontal=True,
         key="sel_global"
     )
+
+# Limpar session state se a seleção da lista global de ativos mudar
+if 'lista_anterior' not in st.session_state:
+    st.session_state.lista_anterior = lista_global
+
+if st.session_state.lista_anterior != lista_global:
+    for key in scanners_keys:
+        st.session_state[key] = None
+    st.session_state.lista_anterior = lista_global
+
 with col_btn:
     rodar_todos = st.button("🚀 Rodar Todos os Scanners", type="primary", key="btn_rodar_todos", use_container_width=True)
 
@@ -760,85 +776,120 @@ st.markdown("---")
 # ---- SCANNER 1: Scalping ----
 with st.expander("📊 Scanner Scalping (5m + 15m + 1H)", expanded=True):
     st.caption("Filtros: Volume alto + Acima VWAP + Tendencia 1H + RR claro")
-    resultado_scalping = st.empty()
-    if rodar_todos or st.button("▶ Rodar Scalping", key="btn_scalping"):
+    btn_sc = st.button("▶ Rodar Scalping", key="btn_scalping")
+    if rodar_todos or btn_sc:
         with st.spinner("Analisando Scalping..."):
             df_sc = scanner_scalping_melhorado(ativos_global)
             if not df_sc.empty:
-                df_sc = df_sc.sort_values('Score', ascending=False)
-                mostrar_resultado(df_sc, label="scalping")
-                st.success(f"Encontradas **{len(df_sc)}** oportunidades de scalping!")
+                st.session_state.df_sc = df_sc.sort_values('Score', ascending=False)
             else:
-                st.warning("Nenhuma oportunidade forte no momento.")
+                st.session_state.df_sc = pd.DataFrame()
+                
+    if st.session_state.df_sc is not None:
+        if not st.session_state.df_sc.empty:
+            mostrar_resultado(st.session_state.df_sc, label="scalping")
+            st.success(f"Encontradas **{len(st.session_state.df_sc)}** oportunidades de scalping!")
+        else:
+            st.warning("Nenhuma oportunidade forte no momento.")
 
 # ---- SCANNER 2: Scalping Rapido ----
 with st.expander("⚡ Scanner Scalping Rapido (5m + 15m + 1m)", expanded=True):
     st.caption("Filtros reforçados: Volume alto + Acima VWAP + Tendencia 15m + Timing 1m")
-    if rodar_todos or st.button("▶ Rodar Scalping Rapido", key="btn_scalping_r"):
+    btn_sr = st.button("▶ Rodar Scalping Rapido", key="btn_scalping_r")
+    if rodar_todos or btn_sr:
         with st.spinner("Analisando Scalping Rapido..."):
             df_sr = scanner_scalping_rapido(ativos_global)
             if not df_sr.empty:
-                df_sr = df_sr.sort_values('Score', ascending=False)
-                mostrar_resultado(df_sr, label="scalping_rapido")
-                st.success(f"Encontradas **{len(df_sr)}** oportunidades de scalping rapido!")
+                st.session_state.df_sr = df_sr.sort_values('Score', ascending=False)
             else:
-                st.warning("Nenhuma oportunidade forte no momento.")
+                st.session_state.df_sr = pd.DataFrame()
+                
+    if st.session_state.df_sr is not None:
+        if not st.session_state.df_sr.empty:
+            mostrar_resultado(st.session_state.df_sr, label="scalping_rapido")
+            st.success(f"Encontradas **{len(st.session_state.df_sr)}** oportunidades de scalping rapido!")
+        else:
+            st.warning("Nenhuma oportunidade forte no momento.")
 
 # ---- SCANNER 3: Swing Hibrido ----
 with st.expander("🔀 Scanner Swing Hibrido (Daily + 1H + 30M)", expanded=True):
     st.caption("Filtros reforçados: Daily forte + Liquidez + Alinhamento multi-TF")
-    if rodar_todos or st.button("▶ Rodar Swing Hibrido", key="btn_swing_h"):
+    btn_sh = st.button("▶ Rodar Swing Hibrido", key="btn_swing_h")
+    if rodar_todos or btn_sh:
         with st.spinner("Analisando Swing Hibrido..."):
             df_sh = scanner_swing_hibrido(ativos_global)
             if not df_sh.empty:
-                df_sh = df_sh.sort_values('Score Total', ascending=False)
-                mostrar_resultado(df_sh, label="swing_hibrido")
-                st.success(f"Encontradas **{len(df_sh)}** oportunidades de swing trade!")
+                st.session_state.df_sh = df_sh.sort_values('Score Total', ascending=False)
             else:
-                st.warning("Nenhum ativo atendeu aos criterios rigorosos no momento.")
+                st.session_state.df_sh = pd.DataFrame()
+                
+    if st.session_state.df_sh is not None:
+        if not st.session_state.df_sh.empty:
+            mostrar_resultado(st.session_state.df_sh, label="swing_hibrido")
+            st.success(f"Encontradas **{len(st.session_state.df_sh)}** oportunidades de swing trade!")
+        else:
+            st.warning("Nenhum ativo atendeu aos criterios rigorosos no momento.")
 
 # ---- SCANNER 4: Swing RR ----
 with st.expander("🎯 Scanner Swing Trade + Risk/Reward (Daily + 1H + 30M + Alvos)", expanded=True):
     st.caption("Filtros reforçados + Suporte/Resistencia + Stop + Alvos 1:2 e 1:3")
-    if rodar_todos or st.button("▶ Rodar Swing RR", key="btn_swing_rr"):
+    btn_rr = st.button("▶ Rodar Swing RR", key="btn_swing_rr")
+    if rodar_todos or btn_rr:
         with st.spinner("Analisando Swing RR..."):
             df_rr = scanner_swing_rr(ativos_global)
             if not df_rr.empty:
-                df_rr = df_rr.sort_values('Score Total', ascending=False)
-                mostrar_resultado(df_rr, label="swing_rr")
-                st.success(f"Encontradas **{len(df_rr)}** oportunidades com alvos de RR!")
+                st.session_state.df_rr = df_rr.sort_values('Score Total', ascending=False)
             else:
-                st.warning("Nenhum ativo atendeu aos criterios rigorosos no momento.")
+                st.session_state.df_rr = pd.DataFrame()
+                
+    if st.session_state.df_rr is not None:
+        if not st.session_state.df_rr.empty:
+            mostrar_resultado(st.session_state.df_rr, label="swing_rr")
+            st.success(f"Encontradas **{len(st.session_state.df_rr)}** oportunidades com alvos de RR!")
+        else:
+            st.warning("Nenhum ativo atendeu aos criterios rigorosos no momento.")
 
 # ---- SCANNER 5: Swing Pro ----
 with st.expander("🏆 Scanner Swing Trade Profissional (Daily + 1H + 30M)", expanded=True):
     st.caption("Filtros: Vol >1.5x | Acima EMA20/50 | ADX>20 | RSI 45-75 | Alinhamento 1H+30M")
-    if rodar_todos or st.button("▶ Rodar Swing Pro", key="btn_swing_pro"):
+    btn_pro = st.button("▶ Rodar Swing Pro", key="btn_swing_pro")
+    if rodar_todos or btn_pro:
         with st.spinner("Analisando Swing Pro..."):
             df_pro = scanner_swing_profissional(ativos_global)
             if not df_pro.empty:
-                df_pro = df_pro.sort_values('Score Total', ascending=False)
-                mostrar_resultado(df_pro, label="swing_pro")
-                st.success(f"Encontradas **{len(df_pro)}** oportunidades de swing profissional!")
+                st.session_state.df_pro = df_pro.sort_values('Score Total', ascending=False)
             else:
-                st.warning("Nenhum ativo atendeu todos os criterios no momento.")
+                st.session_state.df_pro = pd.DataFrame()
+                
+    if st.session_state.df_pro is not None:
+        if not st.session_state.df_pro.empty:
+            mostrar_resultado(st.session_state.df_pro, label="swing_pro")
+            st.success(f"Encontradas **{len(st.session_state.df_pro)}** oportunidades de swing profissional!")
+        else:
+            st.warning("Nenhum ativo atendeu todos os criterios no momento.")
 
 # ---- SCANNER 6: Swing Expandido ----
 with st.expander("🌐 Scanner Swing Expandido (Blue + Mid/Small Caps)", expanded=True):
     st.caption("Lista atualizada 2026 | Criterios rigorosos + Confluencia 1h/30m")
-    if rodar_todos or st.button("▶ Rodar Swing Expandido", key="btn_swing_exp"):
+    btn_exp = st.button("▶ Rodar Swing Expandido", key="btn_swing_exp")
+    if rodar_todos or btn_exp:
         with st.spinner("Analisando Swing Expandido..."):
             df_exp = scanner_swing_expandido(ativos_global)
             if not df_exp.empty:
-                df_exp = df_exp.sort_values('Score Diario', ascending=False)
-                mostrar_resultado(df_exp, label="swing_expandido")
-                bons = df_exp[df_exp['Confluencia Geral'].isin(['Boa', 'Excelente'])]
-                if len(bons) > 0:
-                    st.success(f"Encontradas **{len(df_exp)}** oportunidades. **{len(bons)}** com confluencia Boa/Excelente.")
-                else:
-                    st.info(f"Encontradas **{len(df_exp)}** oportunidades, mas nenhuma com confluencia Boa/Excelente.")
+                st.session_state.df_exp = df_exp.sort_values('Score Diario', ascending=False)
             else:
-                st.warning("Nenhum ativo atendeu todos os criterios hoje. Mercado ainda em consolidacao.")
+                st.session_state.df_exp = pd.DataFrame()
+                
+    if st.session_state.df_exp is not None:
+        if not st.session_state.df_exp.empty:
+            mostrar_resultado(st.session_state.df_exp, label="swing_expandido")
+            bons = st.session_state.df_exp[st.session_state.df_exp['Confluencia Geral'].isin(['Boa', 'Excelente'])]
+            if len(bons) > 0:
+                st.success(f"Encontradas **{len(st.session_state.df_exp)}** oportunidades. **{len(bons)}** com confluencia Boa/Excelente.")
+            else:
+                st.info(f"Encontradas **{len(st.session_state.df_exp)}** oportunidades, mas nenhuma com confluencia Boa/Excelente.")
+        else:
+            st.warning("Nenhum ativo atendeu todos os criterios hoje. Mercado ainda em consolidacao.")
 
 # --- RODAPE ---
 st.markdown("---")
