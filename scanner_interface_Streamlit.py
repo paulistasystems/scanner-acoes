@@ -670,71 +670,143 @@ def scanner_swing_expandido(ativos):
     return pd.DataFrame(resultados)
 
 # ===================== HELPER: COPY TO CLIPBOARD =====================
+def formatar_dataframe_para_texto(df):
+    """Converte DataFrame em texto linear (uma linha por ativo, chave: valor)."""
+    if df is None or df.empty:
+        return "Não há setups de compra válidos no momento."
+
+    cols = df.columns.tolist()
+    linhas = []
+    for _, row in df.iterrows():
+        pares = []
+        for col in cols:
+            val = row[col]
+            if pd.isna(val):
+                val_str = "N/A"
+            elif isinstance(val, float):
+                val_str = f"{val:.2f}"
+            else:
+                val_str = str(val)
+            pares.append(f"{col}: {val_str}")
+        linhas.append(" | ".join(pares))
+
+    return "\n".join(linhas)
+
 def mostrar_resultado(df, label="resultado"):
-    """Exibe o dataframe com botoes de copiar para clipboard e download CSV."""
+    """Exibe o dataframe normal, mas copia com prompt de trader."""
+    if df is None or df.empty:
+        st.warning("Nenhum resultado encontrado.")
+        return
+
+    # Exibir dataframe normalmente
     st.dataframe(df, use_container_width=True, hide_index=True)
 
-    csv_str = df.to_csv(index=False)
-    # Botoes lado a lado
-    col_copy, col_dl, _ = st.columns([1, 1, 4])
+    # Prompt do trader (incluído apenas no clipboard)
+    prompt_trader = """### Você é um trader profissional de Intraday e Swing curto prazo no mercado brasileiro.
 
-    with col_dl:
-        st.download_button(
-            label="⬇️ Baixar CSV",
-            data=csv_str.encode("utf-8"),
-            file_name=f"scanner_{label}_{__import__('datetime').datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-            mime="text/csv",
-            key=f"dl_{label}_{id(df)}"
-        )
+**Regras de Análise (obedeça rigorosamente):**
+- Timeframe principal: 1 hora
+- Timeframe auxiliar: 30 minutos
+- Estilo: Intraday ou Swing de 1 a 3 dias (posso carregar overnight)
+- Risco máximo por trade: 1% do capital
+- Risk:Reward mínimo obrigatório: **1:2**
+- **Só liste setups de COMPRA válidos** (nada de venda ou short)
+- Só recomende entrada se Score ≥ 65 e haja boa confluência entre 1h e 30m
 
-    with col_copy:
-        # Escapar o CSV para uso seguro em JS
-        escaped = csv_str.replace("\\", "\\\\").replace("`", "\\`").replace("$", "\\$")
-        copy_html = f"""
-        <style>
-            .copy-btn {{
-                background: linear-gradient(135deg, #1e3a5f, #2563eb);
-                color: white;
-                border: none;
-                border-radius: 8px;
-                padding: 6px 14px;
-                font-size: 14px;
-                cursor: pointer;
-                transition: all 0.2s ease;
-                font-family: sans-serif;
-                white-space: nowrap;
-            }}
-            .copy-btn:hover {{
-                background: linear-gradient(135deg, #2563eb, #3b82f6);
-                transform: translateY(-1px);
-                box-shadow: 0 4px 12px rgba(37,99,235,0.4);
-            }}
-            .copy-btn:active {{ transform: scale(0.97); }}
-        </style>
-        <button class="copy-btn" onclick="(function(){{
-            const text = `{escaped}`;
-            navigator.clipboard.writeText(text).then(function() {{
-                const btn = document.querySelector('.copy-btn');
-                btn.innerText = '✅ Copiado!';
-                btn.style.background = 'linear-gradient(135deg, #065f46, #10b981)';
+**Responda EXATAMENTE neste formato:**
+
+### ANÁLISE FINAL
+
+**Setups de Compra Válidos (em ordem de prioridade):**
+
+**XXXX** → **Score: XX/100**
+**Entrada Sugerida:** R$ XXXX
+**Stop Loss:** R$ XXXX (-X.X%)
+**Target 1:** R$ XXXX (+X.X% | R:R 1:2)
+**Target 2:** R$ XXXX (+X.X% | R:R 1:3)
+**Confluência 1h + 30m:**
+**Forças principais:**
+**Fraquezas / Riscos:**
+**Estratégia sugerida:**
+
+**Setups para Monitorar (sem confluência suficiente):**
+XXXX → Motivo breve
+
+**Resumo Geral:**
+**Viés do mercado hoje:**
+**Nível de risco do dia (Baixo / Médio / Alto):**
+**Melhor horário para entrada:**
+
+Seja objetivo, direto e conservador. Se não houver setups bons, diga claramente "Não há setups de compra válidos no momento."
+
+---
+
+**Dados do Scanner (cole aqui todo o output do scanner):**
+
+"""
+
+    # Converter DataFrame para formato textual linear
+    dados_textuais = formatar_dataframe_para_texto(df)
+
+    # Combinar prompt + dados
+    texto_completo = prompt_trader + dados_textuais
+
+    # Escapar para HTML seguro (textarea) - só precisa escapar &, <, > e a sequência </textarea>
+    html_safe = texto_completo.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+    # ID único por botão
+    import hashlib
+    uid = "t" + hashlib.md5((label + str(id(df))).encode()).hexdigest()[:8]
+
+    copy_html = f"""
+    <style>
+        #copybtn{uid} {{
+            background: linear-gradient(135deg, #065f46, #10b981);
+            color: white; border: none; border-radius: 8px;
+            padding: 10px 20px; font-size: 15px; cursor: pointer;
+            font-family: sans-serif; font-weight: bold;
+            transition: all 0.2s ease;
+        }}
+        #copybtn{uid}:hover {{
+            background: linear-gradient(135deg, #10b981, #059669);
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(16,185,129,0.4);
+        }}
+    </style>
+    <textarea id="src{uid}" style="position:absolute;left:-9999px;top:0;width:1px;height:1px">{html_safe}</textarea>
+    <button id="copybtn{uid}">📋 Copiar Análise Completa</button>
+    <script>
+        const btn{uid} = document.getElementById('copybtn{uid}');
+        btn{uid}.addEventListener('click', function() {{
+            const ta = document.getElementById('src{uid}');
+            ta.style.position = 'static';
+            ta.style.left = '0';
+            ta.style.width = '100%';
+            ta.style.height = '200px';
+            ta.select();
+            ta.setSelectionRange(0, 99999);
+            let ok = false;
+            try {{ ok = document.execCommand('copy'); }} catch(e) {{ ok = false; }}
+            if (ok) {{
+                btn{uid}.innerText = '✅ Copiado!';
+                btn{uid}.style.background = 'linear-gradient(135deg, #064e3b, #059669)';
+                ta.style.position = 'absolute';
+                ta.style.left = '-9999px';
+                ta.style.width = '1px';
+                ta.style.height = '1px';
                 setTimeout(() => {{
-                    btn.innerText = '📋 Copiar Tabela';
-                    btn.style.background = 'linear-gradient(135deg, #1e3a5f, #2563eb)';
+                    btn{uid}.innerText = '📋 Copiar Análise Completa';
+                    btn{uid}.style.background = 'linear-gradient(135deg, #065f46, #10b981)';
                 }}, 2500);
-            }}).catch(function() {{
-                const ta = document.createElement('textarea');
-                ta.value = text;
-                document.body.appendChild(ta);
-                ta.select();
-                document.execCommand('copy');
-                document.body.removeChild(ta);
-                const btn = document.querySelector('.copy-btn');
-                btn.innerText = '✅ Copiado!';
-                setTimeout(() => {{ btn.innerText = '📋 Copiar Tabela'; }}, 2500);
-            }});
-        }})()">📋 Copiar Tabela</button>
-        """
-        components.html(copy_html, height=45)
+            }} else {{
+                btn{uid}.innerText = 'Selecione e use Ctrl+C';
+                btn{uid}.style.background = '#dc2626';
+                ta.focus();
+            }}
+        }});
+    </script>
+    """
+    components.html(copy_html, height=55)
 
 
 # ===================== INTERFACE STREAMLIT =====================
