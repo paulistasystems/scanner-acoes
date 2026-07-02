@@ -699,7 +699,7 @@ def mostrar_resultado(df, label="resultado"):
         return
 
     # Exibir dataframe normalmente
-    st.dataframe(df, use_container_width=True, hide_index=True)
+    st.dataframe(df, width='stretch', hide_index=True)
 
     # Prompt do trader (incluído apenas no clipboard)
     prompt_trader = """### Você é um trader profissional de Intraday e Swing curto prazo no mercado brasileiro.
@@ -806,7 +806,7 @@ Seja objetivo, direto e conservador. Se não houver setups bons, diga claramente
         }});
     </script>
     """
-    components.html(copy_html, height=55)
+    st.iframe(copy_html, height=55)
 
 
 # ===================== INTERFACE STREAMLIT =====================
@@ -839,7 +839,7 @@ if st.session_state.lista_anterior != lista_global:
     st.session_state.lista_anterior = lista_global
 
 with col_btn:
-    rodar_todos = st.button("🚀 Rodar Todos os Scanners", type="primary", key="btn_rodar_todos", use_container_width=True)
+    rodar_todos = st.button("🚀 Rodar Todos os Scanners", type="primary", key="btn_rodar_todos", width='stretch')
 
 ativos_global = ATIVOS_BLUE_CHIPS if lista_global == "Blue Chips" else ATIVOS_COMPLETO
 
