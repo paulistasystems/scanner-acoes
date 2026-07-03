@@ -213,6 +213,8 @@ def scanner_swing_rr(ativos):
 # ===================== SCANNER SWING PROFISSIONAL (Daily + 1H + 30M) =====================
 def scanner_swing_profissional(ativos):
     resultados = []
+    progress = st.progress(0, text="Analisando ativos...")
+    total = len(ativos)
 
     def analisar_tf(df, tf_name):
         if len(df) < 50:
