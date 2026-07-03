@@ -420,57 +420,57 @@ def scanner_swing_expandido(adx_min, rsi_min, rsi_max, vol_ratio_min):
 st.markdown("---")
 st.subheader("⚙️ Painel de Controle Global")
 
-# Row 1: Radio button + Update button
-col_radio, col_btn = st.columns([4, 1.2])
-
-with col_radio:
+# Usar st.form para que os sliders NÃO disparem rerun automático.
+# Só o botão de submit (Atualizar Scanners) dispara o rerun.
+with st.form("painel_controle"):
+    # Row 1: Radio button
     lista_global = st.radio("Lista de ativos", ["Todos", "Blue Chips"], horizontal=True)
 
-with col_btn:
-    rodar_todos = st.button("🔄 Atualizar Scanners", type="primary", use_container_width=True)
+    # Row 2: Volume + ADX + RSI Min + RSI Max sliders
+    col_vol, col_adx, col_rsi_min, col_rsi_max = st.columns(4)
 
-# Row 2: Volume + ADX + RSI Min + RSI Max sliders
-col_vol, col_adx, col_rsi_min, col_rsi_max = st.columns(4)
+    with col_vol:
+        min_vol_ratio = st.slider(
+            "📊 Volume Ratio Mínimo",
+            min_value=1.0,
+            max_value=3.0,
+            value=DEFAULT_VOL_RATIO,
+            step=0.1,
+            help="Ratio mínimo entre volume atual e média de 20 períodos"
+        )
 
-with col_vol:
-    min_vol_ratio = st.slider(
-        "📊 Volume Ratio Mínimo",
-        min_value=1.0,
-        max_value=3.0,
-        value=DEFAULT_VOL_RATIO,
-        step=0.1,
-        help="Ratio mínimo entre volume atual e média de 20 períodos"
-    )
+    with col_adx:
+        adx_min = st.slider(
+            "📈 ADX Mínimo",
+            min_value=15,
+            max_value=35,
+            value=DEFAULT_ADX_MIN,
+            step=1,
+            help="Força mínima da tendência (ADX). Valores > 25 indicam tendência forte"
+        )
 
-with col_adx:
-    adx_min = st.slider(
-        "📈 ADX Mínimo",
-        min_value=15,
-        max_value=35,
-        value=DEFAULT_ADX_MIN,
-        step=1,
-        help="Força mínima da tendência (ADX). Valores > 25 indicam tendência forte"
-    )
+    with col_rsi_min:
+        rsi_min = st.slider(
+            "⬇️ RSI Mínimo",
+            min_value=40,
+            max_value=60,
+            value=DEFAULT_RSI_MIN,
+            step=1,
+            help="RSI mínimo para considerar momentum de alta"
+        )
 
-with col_rsi_min:
-    rsi_min = st.slider(
-        "⬇️ RSI Mínimo",
-        min_value=40,
-        max_value=60,
-        value=DEFAULT_RSI_MIN,
-        step=1,
-        help="RSI mínimo para considerar momentum de alta"
-    )
+    with col_rsi_max:
+        rsi_max = st.slider(
+            "⬆️ RSI Máximo",
+            min_value=60,
+            max_value=80,
+            value=DEFAULT_RSI_MAX,
+            step=1,
+            help="RSI máximo antes de sobrecompra"
+        )
 
-with col_rsi_max:
-    rsi_max = st.slider(
-        "⬆️ RSI Máximo",
-        min_value=60,
-        max_value=80,
-        value=DEFAULT_RSI_MAX,
-        step=1,
-        help="RSI máximo antes de sobrecompra"
-    )
+    # Botão de submit do form — único gatilho de rerun
+    rodar_todos = st.form_submit_button("🔄 Atualizar Scanners", type="primary", use_container_width=True)
 
 ativos_global = ATIVOS_BLUE_CHIPS if lista_global == "Blue Chips" else ATIVOS_COMPLETO
 
@@ -510,34 +510,12 @@ for key in scanners_keys:
     if key not in st.session_state:
         st.session_state[key] = None
 
-# Reset quando mudar lista ou qualquer slider
-if 'last_lista' not in st.session_state:
-    st.session_state.last_lista = lista_global
-if 'last_ratio' not in st.session_state:
-    st.session_state.last_ratio = min_vol_ratio
-if 'last_adx' not in st.session_state:
-    st.session_state.last_adx = adx_min
-if 'last_rsi_min' not in st.session_state:
-    st.session_state.last_rsi_min = rsi_min
-if 'last_rsi_max' not in st.session_state:
-    st.session_state.last_rsi_max = rsi_max
-
-params_changed = (
-    st.session_state.last_lista != lista_global
-    or st.session_state.last_ratio != min_vol_ratio
-    or st.session_state.last_adx != adx_min
-    or st.session_state.last_rsi_min != rsi_min
-    or st.session_state.last_rsi_max != rsi_max
-)
-
-if params_changed:
+# Quando o form é submetido, limpar cache dos scanners E cache de dados para forçar recálculo
+if rodar_todos:
     for key in scanners_keys:
         st.session_state[key] = None
-    st.session_state.last_lista = lista_global
-    st.session_state.last_ratio = min_vol_ratio
-    st.session_state.last_adx = adx_min
-    st.session_state.last_rsi_min = rsi_min
-    st.session_state.last_rsi_max = rsi_max
+    # Limpar cache do yfinance para baixar dados frescos
+    baixar_dados.clear()
 
 st.markdown("---")
 
@@ -789,6 +767,10 @@ run_scanner(
     'df_exp',
     descricao="Lista completa (Blue Chips + Mid/Small). Volume médio mínimo relaxado (2.5M)."
 )
+
+# Feedback visual após atualização
+if rodar_todos:
+    st.toast("✅ Scanners atualizados com sucesso!", icon="🎉")
 
 st.markdown("---")
 st.caption(f"Última atualização: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}")
