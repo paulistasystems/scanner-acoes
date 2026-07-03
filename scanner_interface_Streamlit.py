@@ -14,7 +14,7 @@ import streamlit.components.v1 as components
 
 st.set_page_config(page_title="Scanner Acoes BR", layout="wide", page_icon="📈")
 st.title("SCANNER CONSOLIDADO DE ACOES - BRASIL")
-st.markdown("**Scalping + Swing Trade** | Dados em tempo real via yfinance")
+st.markdown("**Swing Trade** | Dados em tempo real via yfinance")
 
 # ===================== LISTA DE ATIVOS =====================
 ATIVOS_BLUE_CHIPS = [
@@ -56,206 +56,6 @@ def safe_float(x, default=0.0):
     except:
         return default
 
-# ===================== SCANNER SCALPING (5m + 15m + 1H) =====================
-def scanner_scalping_melhorado(ativos):
-    resultados = []
-    progress = st.progress(0, text="Analisando ativos...")
-    total = len(ativos)
-
-    for i, symbol in enumerate(ativos):
-        progress.progress(i / total, text=f"Analisando {symbol.replace('.SA', '')}...")
-        try:
-            df5 = baixar_dados(symbol, '5m', '5d')
-            if len(df5) < 200:
-                continue
-
-            last5 = df5.iloc[-1]
-            prev5 = df5.iloc[-2]
-            preco = safe_float(last5['Close'])
-
-            df5['EMA8'] = ta.ema(df5['Close'], length=8)
-            df5['EMA21'] = ta.ema(df5['Close'], length=21)
-            df5['RSI'] = ta.rsi(df5['Close'], length=14)
-            df5['ATR'] = ta.atr(df5['High'], df5['Low'], df5['Close'], length=14)
-            df5['VWAP'] = ta.vwap(df5['High'], df5['Low'], df5['Close'], df5['Volume'])
-            macd5 = ta.macd(df5['Close'])
-            adx5 = ta.adx(df5['High'], df5['Low'], df5['Close'], length=14)
-
-            vol20 = df5['Volume'].rolling(20).mean()
-            vol_ratio = safe_float(last5['Volume']) / safe_float(vol20.iloc[-1])
-            atr_val = safe_float(df5['ATR'].iloc[-1])
-            rsi = safe_float(df5['RSI'].iloc[-1])
-            macd_val = safe_float(macd5['MACD_12_26_9'].iloc[-1])
-            adx_val = safe_float(adx5['ADX_14'].iloc[-1])
-            vwap_val = safe_float(df5['VWAP'].iloc[-1])
-
-            df15 = baixar_dados(symbol, '15m', '5d')
-            score_15 = 0
-            if len(df15) > 120:
-                df15['EMA8'] = ta.ema(df15['Close'], length=8)
-                df15['VWAP'] = ta.vwap(df15['High'], df15['Low'], df15['Close'], df15['Volume'])
-                if preco > safe_float(df15['EMA8'].iloc[-1]): score_15 += 25
-                if preco > safe_float(df15['VWAP'].iloc[-1]): score_15 += 20
-
-            df1h = baixar_dados(symbol, '1h', '75d')
-            tendencia_1h = "NEUTRA"
-            if len(df1h) > 80:
-                df1h['EMA20'] = ta.ema(df1h['Close'], length=20)
-                if preco > safe_float(df1h['EMA20'].iloc[-1]):
-                    tendencia_1h = "ALTA"
-                else:
-                    tendencia_1h = "BAIXA"
-
-            if vol_ratio < 2.5: continue
-            if safe_float(vol20.iloc[-1]) < 450_000: continue
-            if preco <= safe_float(df5['EMA8'].iloc[-1]): continue
-            if preco < vwap_val: continue
-            if adx_val < 28: continue
-            if rsi > 76 or rsi < 45: continue
-            if tendencia_1h == "BAIXA": continue
-
-            score = 0
-            if preco > safe_float(df5['EMA8'].iloc[-1]): score += 30
-            if macd_val > 0: score += 20
-            if vol_ratio > 4.0: score += 25
-            if adx_val > 35: score += 15
-            if 55 < rsi < 72: score += 15
-            if atr_val / preco < 0.018: score += 10
-            score += score_15
-
-            var_atual = ((preco / safe_float(prev5['Close'])) - 1) * 100
-            suporte = safe_float(df5['Low'].rolling(30).min().iloc[-1])
-            resistencia = safe_float(df5['High'].rolling(30).max().iloc[-1])
-            stop_loss = preco - (atr_val * 1.6)
-            risco = preco - stop_loss
-            alvo1 = preco + (risco * 1.5)
-            alvo2 = preco + (risco * 2.5)
-            distancia_stop = ((preco - stop_loss) / preco) * 100
-
-            resultados.append({
-                'Ativo': symbol.replace('.SA', ''),
-                'Preco': preco,
-                'Var 5m': var_atual,
-                'Score': score,
-                'Vol Ratio': vol_ratio,
-                'ADX': adx_val,
-                'RSI': rsi,
-                'Tend 1H': tendencia_1h,
-                'Suporte': suporte,
-                'Resistencia': resistencia,
-                'Stop Loss': stop_loss,
-                'Dist Stop %': distancia_stop,
-                'Alvo 1:1.5': alvo1,
-                'Alvo 1:2.5': alvo2,
-                'Avaliacao': 'EXCELENTE SCALP' if score >= 95 else 'Boa Entrada' if score >= 80 else 'Monitorar'
-            })
-        except:
-            continue
-
-    progress.progress(1.0, text="Concluido!")
-    return pd.DataFrame(resultados)
-
-# ===================== SCANNER SCALPING RAPIDO (5m + 15m + 1m) =====================
-def scanner_scalping_rapido(ativos):
-    resultados = []
-    progress = st.progress(0, text="Analisando ativos...")
-    total = len(ativos)
-
-    for i, symbol in enumerate(ativos):
-        progress.progress(i / total, text=f"Analisando {symbol.replace('.SA', '')}...")
-        try:
-            df5 = baixar_dados(symbol, '5m', '5d')
-            if len(df5) < 200:
-                continue
-
-            last5 = df5.iloc[-1]
-            prev5 = df5.iloc[-2]
-            preco = safe_float(last5['Close'])
-
-            df5['EMA8'] = ta.ema(df5['Close'], length=8)
-            df5['EMA21'] = ta.ema(df5['Close'], length=21)
-            df5['RSI'] = ta.rsi(df5['Close'], length=14)
-            df5['ATR'] = ta.atr(df5['High'], df5['Low'], df5['Close'], length=14)
-            df5['VWAP'] = ta.vwap(df5['High'], df5['Low'], df5['Close'], df5['Volume'])
-            macd5 = ta.macd(df5['Close'])
-            adx5 = ta.adx(df5['High'], df5['Low'], df5['Close'], length=14)
-
-            vol20 = df5['Volume'].rolling(20).mean()
-            vol_ratio = safe_float(last5['Volume']) / safe_float(vol20.iloc[-1])
-            vol_medio = safe_float(vol20.iloc[-1])
-            atr_val = safe_float(df5['ATR'].iloc[-1])
-            rsi = safe_float(df5['RSI'].iloc[-1])
-            macd_val = safe_float(macd5['MACD_12_26_9'].iloc[-1])
-            adx_val = safe_float(adx5['ADX_14'].iloc[-1])
-            vwap_val = safe_float(df5['VWAP'].iloc[-1])
-
-            df15 = baixar_dados(symbol, '15m', '5d')
-            tendencia_15 = "NEUTRA"
-            score_15 = 0
-            if len(df15) > 100:
-                df15['EMA8'] = ta.ema(df15['Close'], length=8)
-                df15['VWAP'] = ta.vwap(df15['High'], df15['Low'], df15['Close'], df15['Volume'])
-                if preco > safe_float(df15['EMA8'].iloc[-1]):
-                    tendencia_15 = "ALTA"
-                    score_15 += 25
-                if preco > safe_float(df15['VWAP'].iloc[-1]):
-                    score_15 += 20
-
-            df1 = baixar_dados(symbol, '1m', '1d')
-            score_1m = 0
-            if len(df1) > 150:
-                df1['EMA8'] = ta.ema(df1['Close'], length=8)
-                if preco > safe_float(df1['EMA8'].iloc[-1]): score_1m += 30
-
-            if vol_ratio < 2.5: continue
-            if vol_medio < 420_000: continue
-            if preco <= safe_float(df5['EMA8'].iloc[-1]): continue
-            if preco < vwap_val: continue
-            if adx_val < 28: continue
-            if rsi > 76 or rsi < 45: continue
-
-            score = 0
-            if preco > safe_float(df5['EMA8'].iloc[-1]): score += 30
-            if macd_val > 0: score += 20
-            if vol_ratio > 4.0: score += 25
-            if adx_val > 34: score += 15
-            if 54 < rsi < 72: score += 15
-            if atr_val / preco < 0.018: score += 10
-            score += score_15 + (score_1m * 0.8)
-
-            var_atual = ((preco / safe_float(prev5['Close'])) - 1) * 100
-            suporte = safe_float(df5['Low'].rolling(40).min().iloc[-1])
-            resistencia = safe_float(df5['High'].rolling(40).max().iloc[-1])
-            stop_loss = preco - (atr_val * 1.55)
-            risco = preco - stop_loss
-            alvo1 = preco + (risco * 1.5)
-            alvo2 = preco + (risco * 2.5)
-            distancia_stop = ((preco - stop_loss) / preco) * 100
-
-            resultados.append({
-                'Ativo': symbol.replace('.SA', ''),
-                'Preco': preco,
-                'Var 5m': var_atual,
-                'Score': score,
-                'Vol Ratio': vol_ratio,
-                'ADX': adx_val,
-                'RSI': rsi,
-                'Tend 15m': tendencia_15,
-                'Timing 1m': 'Forte' if score_1m >= 25 else 'Fraco',
-                'Suporte': suporte,
-                'Resistencia': resistencia,
-                'Stop Loss': stop_loss,
-                'Dist Stop %': distancia_stop,
-                'Alvo 1:1.5': alvo1,
-                'Alvo 1:2.5': alvo2,
-                'Avaliacao': 'EXCELENTE SCALP' if score >= 95 else 'Boa Entrada' if score >= 80 else 'Monitorar'
-            })
-        except:
-            continue
-
-    progress.progress(1.0, text="Concluido!")
-    return pd.DataFrame(resultados)
-
 # ===================== ANALISAR TIMEFRAME SWING =====================
 def analisar_timeframe_swing(df, tf_name="Daily", incluir_atr=False):
     if len(df) < 100:
@@ -296,11 +96,8 @@ def analisar_timeframe_swing(df, tf_name="Daily", incluir_atr=False):
 # ===================== SCANNER SWING HIBRIDO (Daily + 1H + 30M) =====================
 def scanner_swing_hibrido(ativos):
     resultados = []
-    progress = st.progress(0, text="Analisando ativos...")
-    total = len(ativos)
 
-    for i, symbol in enumerate(ativos):
-        progress.progress(i / total, text=f"Analisando {symbol.replace('.SA', '')}...")
+    for symbol in ativos:
         try:
             df_d = baixar_dados(symbol, '1d', '1y')
             if len(df_d) < 150:
@@ -347,17 +144,13 @@ def scanner_swing_hibrido(ativos):
         except:
             continue
 
-    progress.progress(1.0, text="Concluido!")
     return pd.DataFrame(resultados)
 
 # ===================== SCANNER SWING RR (Daily + 1H + 30M + Alvos) =====================
 def scanner_swing_rr(ativos):
     resultados = []
-    progress = st.progress(0, text="Analisando ativos...")
-    total = len(ativos)
 
-    for i, symbol in enumerate(ativos):
-        progress.progress(i / total, text=f"Analisando {symbol.replace('.SA', '')}...")
+    for symbol in ativos:
         try:
             df_d = baixar_dados(symbol, '1d', '1y')
             if len(df_d) < 150: continue
@@ -415,14 +208,11 @@ def scanner_swing_rr(ativos):
         except:
             continue
 
-    progress.progress(1.0, text="Concluido!")
     return pd.DataFrame(resultados)
 
 # ===================== SCANNER SWING PROFISSIONAL (Daily + 1H + 30M) =====================
 def scanner_swing_profissional(ativos):
     resultados = []
-    progress = st.progress(0, text="Analisando ativos...")
-    total = len(ativos)
 
     def analisar_tf(df, tf_name):
         if len(df) < 50:
@@ -509,17 +299,13 @@ def scanner_swing_profissional(ativos):
         except:
             continue
 
-    progress.progress(1.0, text="Concluido!")
     return pd.DataFrame(resultados)
 
 # ===================== SCANNER SWING EXPANDIDO (Mid + Small Caps) =====================
 def scanner_swing_expandido(ativos):
     resultados = []
-    progress = st.progress(0, text="Analisando ativos...")
-    total = len(ativos)
 
-    for i, symbol in enumerate(ativos):
-        progress.progress(i / total, text=f"Analisando {symbol.replace('.SA', '')}...")
+    for symbol in ativos:
         try:
             df = baixar_dados(symbol, '1d', '1y')
             if len(df) < 120:
@@ -666,7 +452,6 @@ def scanner_swing_expandido(ativos):
         except:
             continue
 
-    progress.progress(1.0, text="Concluido!")
     return pd.DataFrame(resultados)
 
 # ===================== HELPER: COPY TO CLIPBOARD =====================
@@ -812,7 +597,7 @@ Seja objetivo, direto e conservador. Se não houver setups bons, diga claramente
 # ===================== INTERFACE STREAMLIT =====================
 
 # Inicialização do Session State para guardar os resultados dos scanners
-scanners_keys = ['df_sc', 'df_sr', 'df_sh', 'df_rr', 'df_pro', 'df_exp']
+scanners_keys = ['df_sh', 'df_rr', 'df_pro', 'df_exp']
 for key in scanners_keys:
     if key not in st.session_state:
         st.session_state[key] = None
@@ -839,62 +624,25 @@ if st.session_state.lista_anterior != lista_global:
     st.session_state.lista_anterior = lista_global
 
 with col_btn:
-    rodar_todos = st.button("🚀 Rodar Todos os Scanners", type="primary", key="btn_rodar_todos", width='stretch')
+    rodar_todos = st.button("🔄 Atualizar Scanners", type="primary", key="btn_rodar_todos", width='stretch')
 
 ativos_global = ATIVOS_BLUE_CHIPS if lista_global == "Blue Chips" else ATIVOS_COMPLETO
 
 st.markdown("---")
 
-# ---- SCANNER 1: Scalping ----
-with st.expander("📊 Scanner Scalping (5m + 15m + 1H)", expanded=True):
-    st.caption("Filtros: Volume alto + Acima VWAP + Tendencia 1H + RR claro")
-    btn_sc = st.button("▶ Rodar Scalping", key="btn_scalping")
-    if rodar_todos or btn_sc:
-        with st.spinner("Analisando Scalping..."):
-            df_sc = scanner_scalping_melhorado(ativos_global)
-            if not df_sc.empty:
-                st.session_state.df_sc = df_sc.sort_values('Score', ascending=False)
-            else:
-                st.session_state.df_sc = pd.DataFrame()
-                
-    if st.session_state.df_sc is not None:
-        if not st.session_state.df_sc.empty:
-            mostrar_resultado(st.session_state.df_sc, label="scalping")
-            st.success(f"Encontradas **{len(st.session_state.df_sc)}** oportunidades de scalping!")
-        else:
-            st.warning("Nenhuma oportunidade forte no momento.")
-
-# ---- SCANNER 2: Scalping Rapido ----
-with st.expander("⚡ Scanner Scalping Rapido (5m + 15m + 1m)", expanded=True):
-    st.caption("Filtros reforçados: Volume alto + Acima VWAP + Tendencia 15m + Timing 1m")
-    btn_sr = st.button("▶ Rodar Scalping Rapido", key="btn_scalping_r")
-    if rodar_todos or btn_sr:
-        with st.spinner("Analisando Scalping Rapido..."):
-            df_sr = scanner_scalping_rapido(ativos_global)
-            if not df_sr.empty:
-                st.session_state.df_sr = df_sr.sort_values('Score', ascending=False)
-            else:
-                st.session_state.df_sr = pd.DataFrame()
-                
-    if st.session_state.df_sr is not None:
-        if not st.session_state.df_sr.empty:
-            mostrar_resultado(st.session_state.df_sr, label="scalping_rapido")
-            st.success(f"Encontradas **{len(st.session_state.df_sr)}** oportunidades de scalping rapido!")
-        else:
-            st.warning("Nenhuma oportunidade forte no momento.")
-
-# ---- SCANNER 3: Swing Hibrido ----
+# ---- SCANNER 1: Swing Hibrido ----
 with st.expander("🔀 Scanner Swing Hibrido (Daily + 1H + 30M)", expanded=True):
     st.caption("Filtros reforçados: Daily forte + Liquidez + Alinhamento multi-TF")
-    btn_sh = st.button("▶ Rodar Swing Hibrido", key="btn_swing_h")
-    if rodar_todos or btn_sh:
+
+    # Run on page load or when button is clicked
+    if st.session_state.df_sh is None or rodar_todos:
         with st.spinner("Analisando Swing Hibrido..."):
             df_sh = scanner_swing_hibrido(ativos_global)
             if not df_sh.empty:
                 st.session_state.df_sh = df_sh.sort_values('Score Total', ascending=False)
             else:
                 st.session_state.df_sh = pd.DataFrame()
-                
+
     if st.session_state.df_sh is not None:
         if not st.session_state.df_sh.empty:
             mostrar_resultado(st.session_state.df_sh, label="swing_hibrido")
@@ -902,18 +650,19 @@ with st.expander("🔀 Scanner Swing Hibrido (Daily + 1H + 30M)", expanded=True)
         else:
             st.warning("Nenhum ativo atendeu aos criterios rigorosos no momento.")
 
-# ---- SCANNER 4: Swing RR ----
+# ---- SCANNER 2: Swing RR ----
 with st.expander("🎯 Scanner Swing Trade + Risk/Reward (Daily + 1H + 30M + Alvos)", expanded=True):
     st.caption("Filtros reforçados + Suporte/Resistencia + Stop + Alvos 1:2 e 1:3")
-    btn_rr = st.button("▶ Rodar Swing RR", key="btn_swing_rr")
-    if rodar_todos or btn_rr:
+
+    # Run on page load or when button is clicked
+    if st.session_state.df_rr is None or rodar_todos:
         with st.spinner("Analisando Swing RR..."):
             df_rr = scanner_swing_rr(ativos_global)
             if not df_rr.empty:
                 st.session_state.df_rr = df_rr.sort_values('Score Total', ascending=False)
             else:
                 st.session_state.df_rr = pd.DataFrame()
-                
+
     if st.session_state.df_rr is not None:
         if not st.session_state.df_rr.empty:
             mostrar_resultado(st.session_state.df_rr, label="swing_rr")
@@ -921,18 +670,19 @@ with st.expander("🎯 Scanner Swing Trade + Risk/Reward (Daily + 1H + 30M + Alv
         else:
             st.warning("Nenhum ativo atendeu aos criterios rigorosos no momento.")
 
-# ---- SCANNER 5: Swing Pro ----
+# ---- SCANNER 3: Swing Pro ----
 with st.expander("🏆 Scanner Swing Trade Profissional (Daily + 1H + 30M)", expanded=True):
     st.caption("Filtros: Vol >1.5x | Acima EMA20/50 | ADX>20 | RSI 45-75 | Alinhamento 1H+30M")
-    btn_pro = st.button("▶ Rodar Swing Pro", key="btn_swing_pro")
-    if rodar_todos or btn_pro:
+
+    # Run on page load or when button is clicked
+    if st.session_state.df_pro is None or rodar_todos:
         with st.spinner("Analisando Swing Pro..."):
             df_pro = scanner_swing_profissional(ativos_global)
             if not df_pro.empty:
                 st.session_state.df_pro = df_pro.sort_values('Score Total', ascending=False)
             else:
                 st.session_state.df_pro = pd.DataFrame()
-                
+
     if st.session_state.df_pro is not None:
         if not st.session_state.df_pro.empty:
             mostrar_resultado(st.session_state.df_pro, label="swing_pro")
@@ -940,18 +690,19 @@ with st.expander("🏆 Scanner Swing Trade Profissional (Daily + 1H + 30M)", exp
         else:
             st.warning("Nenhum ativo atendeu todos os criterios no momento.")
 
-# ---- SCANNER 6: Swing Expandido ----
+# ---- SCANNER 4: Swing Expandido ----
 with st.expander("🌐 Scanner Swing Expandido (Blue + Mid/Small Caps)", expanded=True):
     st.caption("Lista atualizada 2026 | Criterios rigorosos + Confluencia 1h/30m")
-    btn_exp = st.button("▶ Rodar Swing Expandido", key="btn_swing_exp")
-    if rodar_todos or btn_exp:
+
+    # Run on page load or when button is clicked
+    if st.session_state.df_exp is None or rodar_todos:
         with st.spinner("Analisando Swing Expandido..."):
             df_exp = scanner_swing_expandido(ativos_global)
             if not df_exp.empty:
                 st.session_state.df_exp = df_exp.sort_values('Score Diario', ascending=False)
             else:
                 st.session_state.df_exp = pd.DataFrame()
-                
+
     if st.session_state.df_exp is not None:
         if not st.session_state.df_exp.empty:
             mostrar_resultado(st.session_state.df_exp, label="swing_expandido")
