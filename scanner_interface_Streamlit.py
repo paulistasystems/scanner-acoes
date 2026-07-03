@@ -9,6 +9,7 @@ SCANNER CONSOLIDADO - VERSÃO MELHORADA
 """
 
 import streamlit as st
+import streamlit.components.v1 as components
 import pandas as pd
 import yfinance as yf
 import pandas_ta as ta
@@ -602,6 +603,143 @@ def exibir_dataframe_colorido(df_resultado):
     st.success(f"{len(df_resultado)} ativos encontrados")
 
 
+# ===================== HELPER: COPY TO CLIPBOARD =====================
+def formatar_dataframe_para_texto(df):
+    """Converte DataFrame em texto linear (uma linha por ativo, chave: valor)."""
+    if df is None or df.empty:
+        return "Não há setups de compra válidos no momento."
+
+    cols = df.columns.tolist()
+    linhas = []
+    for _, row in df.iterrows():
+        pares = []
+        for col in cols:
+            val = row[col]
+            if pd.isna(val):
+                val_str = "N/A"
+            elif isinstance(val, float):
+                val_str = f"{val:.2f}"
+            else:
+                val_str = str(val)
+            pares.append(f"{col}: {val_str}")
+        linhas.append(" | ".join(pares))
+
+    return "\n".join(linhas)
+
+
+def adicionar_botao_copiar(df, label="resultado"):
+    """Adiciona o botão para copiar a análise com o prompt do trader."""
+    if df is None or df.empty:
+        return
+
+    # Prompt do trader (incluído apenas no clipboard)
+    prompt_trader = """### Você é um trader profissional de Intraday e Swing curto prazo no mercado brasileiro.
+
+**Regras de Análise (obedeça rigorosamente):**
+- Timeframe principal: 1 hora
+- Timeframe auxiliar: 30 minutos
+- Estilo: Intraday ou Swing de 1 a 3 dias (posso carregar overnight)
+- Risco máximo por trade: 1% do capital
+- Risk:Reward mínimo obrigatório: **1:2**
+- **Só liste setups de COMPRA válidos** (nada de venda ou short)
+- Só recomende entrada se Score ≥ 65 e haja boa confluência entre 1h e 30m
+
+**Responda EXATAMENTE neste formato:**
+
+### ANÁLISE FINAL
+
+**Setups de Compra Válidos (em ordem de prioridade):**
+
+**XXXX** → **Score: XX/100**
+**Entrada Sugerida:** R$ XXXX
+**Stop Loss:** R$ XXXX (-X.X%)
+**Target 1:** R$ XXXX (+X.X% | R:R 1:2)
+**Target 2:** R$ XXXX (+X.X% | R:R 1:3)
+**Confluência 1h + 30m:**
+**Forças principais:**
+**Fraquezas / Riscos:**
+**Estratégia sugerida:**
+
+**Setups para Monitorar (sem confluência suficiente):**
+XXXX → Motivo breve
+
+**Resumo Geral:**
+**Viés do mercado hoje:**
+**Nível de risco do dia (Baixo / Médio / Alto):**
+**Melhor horário para entrada:**
+
+Seja objetivo, direto e conservador. Se não houver setups bons, diga claramente "Não há setups de compra válidos no momento."
+
+---
+
+**Dados do Scanner (cole aqui todo o output do scanner):**
+
+"""
+
+    # Converter DataFrame para formato textual linear
+    dados_textuais = formatar_dataframe_para_texto(df)
+
+    # Combinar prompt + dados
+    texto_completo = prompt_trader + dados_textuais
+
+    # Escapar para HTML seguro (textarea)
+    html_safe = texto_completo.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+    # ID único por botão
+    import hashlib
+    uid = "t" + hashlib.md5((label + str(id(df))).encode()).hexdigest()[:8]
+
+    copy_html = f"""
+    <style>
+        #copybtn{uid} {{
+            background: linear-gradient(135deg, #065f46, #10b981);
+            color: white; border: none; border-radius: 8px;
+            padding: 10px 20px; font-size: 15px; cursor: pointer;
+            font-family: sans-serif; font-weight: bold;
+            transition: all 0.2s ease;
+        }}
+        #copybtn{uid}:hover {{
+            background: linear-gradient(135deg, #10b981, #059669);
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(16,185,129,0.4);
+        }}
+    </style>
+    <textarea id="src{uid}" style="position:absolute;left:-9999px;top:0;width:1px;height:1px">{html_safe}</textarea>
+    <button id="copybtn{uid}">📋 Copiar Análise Completa</button>
+    <script>
+        const btn{uid} = document.getElementById('copybtn{uid}');
+        btn{uid}.addEventListener('click', function() {{
+            const ta = document.getElementById('src{uid}');
+            ta.style.position = 'static';
+            ta.style.left = '0';
+            ta.style.width = '100%';
+            ta.style.height = '200px';
+            ta.select();
+            ta.setSelectionRange(0, 99999);
+            let ok = false;
+            try {{ ok = document.execCommand('copy'); }} catch(e) {{ ok = false; }}
+            if (ok) {{
+                btn{uid}.innerText = '✅ Copiado!';
+                btn{uid}.style.background = 'linear-gradient(135deg, #064e3b, #059669)';
+                ta.style.position = 'absolute';
+                ta.style.left = '-9999px';
+                ta.style.width = '1px';
+                ta.style.height = '1px';
+                setTimeout(() => {{
+                    btn{uid}.innerText = '📋 Copiar Análise Completa';
+                    btn{uid}.style.background = 'linear-gradient(135deg, #065f46, #10b981)';
+                }}, 2500);
+            }} else {{
+                btn{uid}.innerText = 'Selecione e use Ctrl+C';
+                btn{uid}.style.background = '#dc2626';
+                ta.focus();
+            }}
+        }});
+    </script>
+    """
+    components.html(copy_html, height=55)
+
+
 # ===================== EXECUÇÃO DOS SCANNERS =====================
 
 def run_scanner(nome, funcao, key, descricao=""):
@@ -616,6 +754,8 @@ def run_scanner(nome, funcao, key, descricao=""):
 
         mostrar_resumo_triade(st.session_state[key])
         exibir_dataframe_colorido(st.session_state[key])
+        if st.session_state[key] is not None and not st.session_state[key].empty:
+            adicionar_botao_copiar(st.session_state[key], label=key)
 
 
 # Scanner 1: Swing Híbrido
