@@ -1,3 +1,5 @@
+# Python 3.13 necessario: pandas_ta exige >=3.12 e numba (0.61.2) exige <3.14.
+# Streamlit Cloud: Settings -> Advanced settings -> Python version = 3.13.
 pandas_ta>=0.3.14b0
 yfinance>=0.2.28
 pandas>=2.0.0

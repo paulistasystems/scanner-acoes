@@ -27,6 +27,30 @@ cd ~/projects/scanner_acoes
 pip install -r requirements.txt
 ```
 
+## 🐍 Versão do Python (3.13)
+
+O app Streamlit (`scanner_interface_Streamlit.py`) depende de `pandas_ta` → `numba`/`llvmlite`, o que restringe a versão do Python:
+
+- `pandas_ta` (`0.4.71b0`) exige **Python >= 3.12**
+- `numba` (`0.61.2`) exige **Python < 3.14** (não compila no 3.14)
+
+➡️ Use **Python 3.13** (faixa viável: 3.12 ou 3.13).
+
+- ❌ **3.11**: falha — `pandas_ta` precisa de `>=3.12`
+- ❌ **3.14**: falha — `numba`/`llvmlite` não compilam
+- ✅ **3.12 / 3.13**: instala e roda normalmente
+
+**Streamlit Community Cloud:** painel do app → ⋮ → Settings → Advanced settings → **Python version: 3.13**.
+
+**Local:** o arquivo `.python-version` marca a versão do projeto. Crie o ambiente com:
+
+```bash
+python3.13 -m venv venv313
+source venv313/bin/activate
+pip install -r requirements.txt
+streamlit run scanner_interface_Streamlit.py
+```
+
 ## 💻 Uso
 
 ### Executar com modo padrão (scalping):
