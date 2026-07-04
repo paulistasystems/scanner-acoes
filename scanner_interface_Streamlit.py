@@ -95,7 +95,7 @@ UNIV_VAREJO = [
 # Ações - Saúde / Farmacêutica
 UNIV_SAUDE = [
     'HAPV3.SA', 'RDOR3.SA', 'FLRY3.SA', 'HYPE3.SA', 'RADL3.SA',
-    'ONCO3.SA', 'ODPV3.SA', 'BLAU3.SA', 'AALR3.SA',
+    'ONCO3.SA', 'BLAU3.SA', 'AALR3.SA',
 ]
 
 # Ações - Imobiliário / Construção
