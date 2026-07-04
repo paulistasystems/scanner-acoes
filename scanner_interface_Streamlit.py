@@ -177,6 +177,412 @@ def analisar_tendencia_tf(df):
 
 # ===================== SCANNERS DIFERENCIADOS =====================
 
+# ===================== LEGACY SCANNERS =====================
+def legacy_profissional(ativos):
+    """
+    Legacy Scanner Profissional (Final Corrigida)
+    - Multi-timeframe: Daily + 1H + 30M
+    - Filters: Vol >1.5x, Above EMA20/50, ADX>20, RSI 45-75
+    - Simple scoring system per timeframe
+    """
+    resultados = []
+    for symbol in ativos:
+        try:
+            # ===================== DAILY =====================
+            df_daily = baixar_dados(symbol, '1d', '1y')
+            if len(df_daily) < 120:
+                continue
+
+            last_daily = df_daily.iloc[-1]
+            preco = safe_float(last_daily['Close'])
+
+            # Indicators
+            df_daily['EMA9'] = ta.ema(df_daily['Close'], length=9)
+            df_daily['EMA20'] = ta.ema(df_daily['Close'], length=20)
+            df_daily['EMA50'] = ta.ema(df_daily['Close'], length=50)
+            df_daily['RSI'] = ta.rsi(df_daily['Close'], length=14)
+            df_daily['ATR'] = ta.atr(df_daily['High'], df_daily['Low'], df_daily['Close'], length=14)
+
+            macd_daily = ta.macd(df_daily['Close'])
+            adx_daily = ta.adx(df_daily['High'], df_daily['Low'], df_daily['Close'], length=14)
+
+            vol20_daily = df_daily['Volume'].rolling(20).mean()
+            vol_ratio_daily = safe_float(last_daily['Volume']) / safe_float(vol20_daily.iloc[-1])
+
+            rsi_daily = safe_float(df_daily['RSI'].iloc[-1])
+            adx_val_daily = safe_float(adx_daily['ADX_14'].iloc[-1])
+            macd_val_daily = safe_float(macd_daily['MACD_12_26_9'].iloc[-1])
+
+            # Daily Score
+            daily_score = 0
+            if preco > safe_float(df_daily['EMA9'].iloc[-1]): daily_score += 25
+            if preco > safe_float(df_daily['EMA20'].iloc[-1]): daily_score += 20
+            if macd_val_daily > 0: daily_score += 20
+            if adx_val_daily > 25: daily_score += 15
+            if 52 < rsi_daily < 73: daily_score += 20
+
+            # Main filters
+            if vol_ratio_daily < 1.5: continue
+            if preco <= safe_float(df_daily['EMA20'].iloc[-1]): continue
+            if preco <= safe_float(df_daily['EMA50'].iloc[-1]): continue
+            if adx_val_daily < 20: continue
+            if not (45 < rsi_daily < 75): continue
+
+            # ===================== 1H =====================
+            df_1h = baixar_dados(symbol, '1h', '60d')
+            if len(df_1h) < 50:
+                continue
+
+            last_1h = df_1h.iloc[-1]
+            close_1h = safe_float(last_1h['Close'])
+
+            df_1h['EMA9'] = ta.ema(df_1h['Close'], length=9)
+            df_1h['EMA20'] = ta.ema(df_1h['Close'], length=20)
+            df_1h['EMA50'] = ta.ema(df_1h['Close'], length=50)
+            df_1h['RSI'] = ta.rsi(df_1h['Close'], length=14)
+
+            macd_1h = ta.macd(df_1h['Close'])
+            adx_1h = ta.adx(df_1h['High'], df_1h['Low'], df_1h['Close'], length=14)
+
+            rsi_1h = safe_float(df_1h['RSI'].iloc[-1])
+            adx_val_1h = safe_float(adx_1h['ADX_14'].iloc[-1])
+            macd_val_1h = safe_float(macd_1h['MACD_12_26_9'].iloc[-1])
+
+            # 1H Score
+            h1_score = 0
+            if close_1h > safe_float(df_1h['EMA9'].iloc[-1]): h1_score += 25
+            if close_1h > safe_float(df_1h['EMA20'].iloc[-1]): h1_score += 20
+            if macd_val_1h > 0: h1_score += 20
+            if adx_val_1h > 25: h1_score += 15
+            if 52 < rsi_1h < 73: h1_score += 20
+
+            # ===================== 30M =====================
+            df_30m = baixar_dados(symbol, '30m', '15d')
+            if len(df_30m) < 50:
+                continue
+
+            last_30m = df_30m.iloc[-1]
+            close_30m = safe_float(last_30m['Close'])
+
+            df_30m['EMA9'] = ta.ema(df_30m['Close'], length=9)
+            df_30m['EMA20'] = ta.ema(df_30m['Close'], length=20)
+            df_30m['EMA50'] = ta.ema(df_30m['Close'], length=50)
+            df_30m['RSI'] = ta.rsi(df_30m['Close'], length=14)
+
+            macd_30m = ta.macd(df_30m['Close'])
+            adx_30m = ta.adx(df_30m['High'], df_30m['Low'], df_30m['Close'], length=14)
+
+            rsi_30m = safe_float(df_30m['RSI'].iloc[-1])
+            adx_val_30m = safe_float(adx_30m['ADX_14'].iloc[-1])
+            macd_val_30m = safe_float(macd_30m['MACD_12_26_9'].iloc[-1])
+
+            # 30M Score
+            m30_score = 0
+            if close_30m > safe_float(df_30m['EMA9'].iloc[-1]): m30_score += 25
+            if close_30m > safe_float(df_30m['EMA20'].iloc[-1]): m30_score += 20
+            if macd_val_30m > 0: m30_score += 20
+            if adx_val_30m > 25: m30_score += 15
+            if 52 < rsi_30m < 73: m30_score += 20
+
+            # Total Score
+            score_total = daily_score + h1_score + m30_score
+
+            # Alignment check
+            daily_tend = "✅ ALTA" if preco > safe_float(df_daily['EMA20'].iloc[-1]) else "❌ BAIXA"
+            h1_tend = "✅ ALTA" if close_1h > safe_float(df_1h['EMA20'].iloc[-1]) else "❌ BAIXA"
+            m30_tend = "✅ ALTA" if close_30m > safe_float(df_30m['EMA20'].iloc[-1]) else "❌ BAIXA"
+
+            alinhamento = "✅ FORTE" if (h1_tend == m30_tend == daily_tend == "✅ ALTA") else "⚠️ PARCIAL"
+
+            resultados.append({
+                'Ativo': symbol.replace('.SA', ''),
+                'Preço': round(preco, 2),
+                'Vol Ratio': round(vol_ratio_daily, 2),
+                'RSI Daily': round(rsi_daily, 1),
+                'ADX Daily': round(adx_val_daily, 1),
+                'RSI 1H': round(rsi_1h, 1),
+                'ADX 1H': round(adx_val_1h, 1),
+                'RSI 30M': round(rsi_30m, 1),
+                'ADX 30M': round(adx_val_30m, 1),
+                'Score Daily': daily_score,
+                'Score 1H': h1_score,
+                'Score 30M': m30_score,
+                'Score Total': score_total,
+                'Alinhamento': alinhamento,
+            })
+        except Exception:
+            continue
+    return pd.DataFrame(resultados)
+
+
+def legacy_intraday_swing(ativos):
+    """
+    Legacy Intraday/Swing Curto Prazo
+    - More rigorous filters: Daily vol >1.7x, liquidity >8M, ADX≥22, RSI 47-73
+    - Weighted score: daily * 1.6 + 1H + 30M
+    - EMA9-based analysis
+    """
+    resultados = []
+    for symbol in ativos:
+        try:
+            # ===================== DAILY (Base) =====================
+            df_d = baixar_dados(symbol, '1d', '1y')
+            if len(df_d) < 150:
+                continue
+
+            last_d = df_d.iloc[-1]
+            preco = safe_float(last_d['Close'])
+
+            df_d['EMA9'] = ta.ema(df_d['Close'], length=9)
+            df_d['EMA20'] = ta.ema(df_d['Close'], length=20)
+            df_d['EMA50'] = ta.ema(df_d['Close'], length=50)
+            df_d['RSI'] = ta.rsi(df_d['Close'], length=14)
+            df_d['ATR'] = ta.atr(df_d['High'], df_d['Low'], df_d['Close'], length=14)
+
+            macd_d = ta.macd(df_d['Close'])
+            adx_d = ta.adx(df_d['High'], df_d['Low'], df_d['Close'], length=14)
+
+            vol20_d = df_d['Volume'].rolling(20).mean()
+            vol_ratio_d = safe_float(last_d['Volume']) / safe_float(vol20_d.iloc[-1])
+            vol_medio_d = safe_float(vol20_d.iloc[-1])
+
+            rsi_d = safe_float(df_d['RSI'].iloc[-1])
+            adx_d_val = safe_float(adx_d['ADX_14'].iloc[-1])
+            macd_d_val = safe_float(macd_d['MACD_12_26_9'].iloc[-1])
+
+            # Rigorous filters
+            if vol_ratio_d < 1.7: continue
+            if vol_medio_d < 8_000_000: continue
+            if adx_d_val < 22: continue
+            if not (47 < rsi_d < 73): continue
+            if preco <= safe_float(df_d['EMA50'].iloc[-1]): continue
+
+            # Daily Score
+            daily_score = 0
+            if preco > safe_float(df_d['EMA9'].iloc[-1]): daily_score += 25
+            if preco > safe_float(df_d['EMA20'].iloc[-1]): daily_score += 25
+            if macd_d_val > 0: daily_score += 15
+            if adx_d_val > 25: daily_score += 20
+            if 48 < rsi_d < 74: daily_score += 15
+
+            # ===================== 1H (Main Setup) =====================
+            df_h = baixar_dados(symbol, '1h', '60d')
+            if len(df_h) < 100:
+                continue
+
+            last_h = df_h.iloc[-1]
+            close_h = safe_float(last_h['Close'])
+
+            df_h['EMA9'] = ta.ema(df_h['Close'], length=9)
+            df_h['EMA20'] = ta.ema(df_h['Close'], length=20)
+            df_h['EMA50'] = ta.ema(df_h['Close'], length=50)
+            df_h['RSI'] = ta.rsi(df_h['Close'], length=14)
+
+            macd_h = ta.macd(df_h['Close'])
+            adx_h = ta.adx(df_h['High'], df_h['Low'], df_h['Close'], length=14)
+
+            vol20_h = df_h['Volume'].rolling(20).mean()
+            vol_ratio_h = safe_float(last_h['Volume']) / safe_float(vol20_h.iloc[-1])
+
+            rsi_h = safe_float(df_h['RSI'].iloc[-1])
+            adx_h_val = safe_float(adx_h['ADX_14'].iloc[-1])
+            macd_h_val = safe_float(macd_h['MACD_12_26_9'].iloc[-1])
+
+            # 1H Score
+            h_score = 0
+            if close_h > safe_float(df_h['EMA9'].iloc[-1]): h_score += 25
+            if close_h > safe_float(df_h['EMA20'].iloc[-1]): h_score += 25
+            if macd_h_val > 0: h_score += 15
+            if adx_h_val > 25: h_score += 20
+            if 48 < rsi_h < 74: h_score += 15
+
+            # ===================== 30M (Timing) =====================
+            df_30 = baixar_dados(symbol, '30m', '15d')
+            score_30 = 0
+            if len(df_30) > 200:
+                df_30['EMA9'] = ta.ema(df_30['Close'], length=9)
+                df_30['RSI'] = ta.rsi(df_30['Close'], length=14)
+                if preco > safe_float(df_30['EMA9'].iloc[-1]): score_30 += 25
+                if safe_float(df_30['RSI'].iloc[-1]) > 52: score_30 += 20
+
+            # Weighted Total Score
+            score_total = (daily_score * 1.6) + h_score + score_30
+
+            alinhamento = "✅ FORTE" if (adx_d_val > 25 and adx_h_val > 23) else "⚠️ PARCIAL"
+
+            resultados.append({
+                'Ativo': symbol.replace('.SA', ''),
+                'Preço': round(preco, 2),
+                'Vol Ratio D': round(vol_ratio_d, 2),
+                'Vol Ratio H': round(vol_ratio_h, 2),
+                'RSI Daily': round(rsi_d, 1),
+                'ADX Daily': round(adx_d_val, 1),
+                'RSI 1H': round(rsi_h, 1),
+                'ADX 1H': round(adx_h_val, 1),
+                'Score 30M': score_30,
+                'Score Total': round(score_total, 0),
+                'Alinhamento': alinhamento,
+            })
+        except Exception:
+            continue
+    return pd.DataFrame(resultados)
+
+
+def legacy_expandida(ativos):
+    """
+    Legacy Expandida (Mid + Small Caps Voláteis)
+    - Expanded asset list with relaxed volume filter (≥2.5M)
+    - Multi-timeframe confluência analysis
+    - Confluência status: Fraca/Parcial/Boa/Excelente
+    """
+    resultados = []
+    # Always use complete list for expanded
+    ativos_exp = ATIVOS_COMPLETO
+
+    for symbol in ativos_exp:
+        try:
+            # ===================== DAILY =====================
+            df = baixar_dados(symbol, '1d', '1y')
+            if len(df) < 120:
+                continue
+
+            last = df.iloc[-1]
+            prev = df.iloc[-2]
+            preco = safe_float(last['Close'])
+
+            df['EMA9'] = ta.ema(df['Close'], length=9)
+            df['EMA20'] = ta.ema(df['Close'], length=20)
+            df['EMA50'] = ta.ema(df['Close'], length=50)
+            df['RSI'] = ta.rsi(df['Close'], length=14)
+            df['ATR'] = ta.atr(df['High'], df['Low'], df['Close'], length=14)
+
+            macd = ta.macd(df['Close'])
+            adx = ta.adx(df['High'], df['Low'], df['Close'], length=14)
+
+            df['Vol20'] = df['Volume'].rolling(20).mean()
+            vol_ratio = safe_float(last['Volume']) / safe_float(df['Vol20'].iloc[-1])
+            vol_medio = safe_float(df['Vol20'].iloc[-1])
+
+            # Relaxed filters for expanded version
+            if vol_ratio < 1.5: continue
+            if vol_medio < 2_500_000: continue
+            if preco <= safe_float(df['EMA20'].iloc[-1]): continue
+            if preco <= safe_float(df['EMA50'].iloc[-1]): continue
+
+            adx_val = safe_float(adx['ADX_14'].iloc[-1])
+            if adx_val < 20: continue
+
+            rsi = safe_float(df['RSI'].iloc[-1])
+            if rsi > 75 or rsi < 45: continue
+
+            # Daily Score
+            score = 0
+            if preco > safe_float(df['EMA9'].iloc[-1]): score += 20
+            if safe_float(macd['MACD_12_26_9'].iloc[-1]) > 0: score += 20
+            if vol_ratio > 2.5: score += 20
+            if adx_val > 25: score += 15
+            if 55 < rsi < 72: score += 15
+            if safe_float(df['ATR'].iloc[-1]) / preco < 0.045: score += 10
+
+            # ===================== 1H (Principal) =====================
+            df_1h = baixar_dados(symbol, '1h', '75d')
+            if len(df_1h) < 80:
+                continue
+
+            df_1h['EMA20'] = ta.ema(df_1h['Close'], length=20)
+            df_1h['EMA50'] = ta.ema(df_1h['Close'], length=50)
+            df_1h['RSI'] = ta.rsi(df_1h['Close'], length=14)
+            macd_1h_df = ta.macd(df_1h['Close'])
+            adx_1h_df = ta.adx(df_1h['High'], df_1h['Low'], df_1h['Close'], length=14)
+
+            last_1h = df_1h.iloc[-1]
+            close_1h = safe_float(last_1h['Close'])
+            ema20_1h = safe_float(df_1h['EMA20'].iloc[-1])
+            ema50_1h = safe_float(df_1h['EMA50'].iloc[-1])
+
+            acima_ema20_50_1h = close_1h > ema20_1h and close_1h > ema50_1h
+            rsi_1h = safe_float(df_1h['RSI'].iloc[-1])
+            macd_1h = safe_float(macd_1h_df['MACD_12_26_9'].iloc[-1])
+            adx_1h = safe_float(adx_1h_df['ADX_14'].iloc[-1])
+
+            # Confluência 1H
+            if acima_ema20_50_1h and adx_1h > 20 and 50 < rsi_1h < 75 and macd_1h > 0:
+                confluencia_1h = "Boa ✅"
+                tendencia_1h = "Alta forte"
+            elif acima_ema20_50_1h:
+                confluencia_1h = "Parcial"
+                tendencia_1h = "Alta moderada"
+            else:
+                tendencia_1h = "Consolidação / Baixa"
+                confluencia_1h = "Fraca"
+
+            # ===================== 30M (Auxiliar) =====================
+            df_30m = baixar_dados(symbol, '30m', '45d')
+            if len(df_30m) < 150:
+                continue
+
+            df_30m['EMA20'] = ta.ema(df_30m['Close'], length=20)
+            df_30m['EMA50'] = ta.ema(df_30m['Close'], length=50)
+            df_30m['RSI'] = ta.rsi(df_30m['Close'], length=14)
+            macd_30m_df = ta.macd(df_30m['Close'])
+            adx_30m_df = ta.adx(df_30m['High'], df_30m['Low'], df_30m['Close'], length=14)
+
+            last_30m = df_30m.iloc[-1]
+            close_30m = safe_float(last_30m['Close'])
+            ema20_30m = safe_float(df_30m['EMA20'].iloc[-1])
+            ema50_30m = safe_float(df_30m['EMA50'].iloc[-1])
+
+            acima_ema20_50_30m = close_30m > ema20_30m and close_30m > ema50_30m
+            rsi_30m = safe_float(df_30m['RSI'].iloc[-1])
+            macd_30m = safe_float(macd_30m_df['MACD_12_26_9'].iloc[-1])
+            adx_30m = safe_float(adx_30m_df['ADX_14'].iloc[-1])
+
+            # Confluência 30M
+            if acima_ema20_50_30m and adx_30m > 20 and 50 < rsi_30m < 75 and macd_30m > 0:
+                confluencia_30m = "Boa ✅"
+                tendencia_30m = "Alta forte"
+            elif acima_ema20_50_30m:
+                confluencia_30m = "Parcial"
+                tendencia_30m = "Alta moderada"
+            else:
+                tendencia_30m = "Consolidação / Baixa"
+                confluencia_30m = "Fraca"
+
+            # Confluência Geral
+            if confluencia_1h == "Boa ✅" and confluencia_30m == "Boa ✅":
+                confluencia_geral = "Excelente ✅✅"
+            elif confluencia_1h == "Boa ✅" or confluencia_30m == "Boa ✅":
+                confluencia_geral = "Boa ✅"
+            elif confluencia_1h == "Parcial" and confluencia_30m == "Parcial":
+                confluencia_geral = "Parcial"
+            else:
+                confluencia_geral = "Fraca / Sem confluência"
+
+            resultados.append({
+                'Ativo': symbol.replace('.SA', ''),
+                'Preço': round(preco, 2),
+                'Vol Ratio': round(vol_ratio, 2),
+                'Vol Médio (M)': round(vol_medio / 1_000_000, 1),
+                'RSI Daily': round(rsi, 1),
+                'ADX Daily': round(adx_val, 1),
+                'RSI 1H': round(rsi_1h, 1),
+                'ADX 1H': round(adx_1h, 1),
+                'RSI 30M': round(rsi_30m, 1),
+                'ADX 30M': round(adx_30m, 1),
+                'Confluência 1H': confluencia_1h,
+                'Confluência 30M': confluencia_30m,
+                'Confluência Geral': confluencia_geral,
+                'Score Diário': score,
+                'Tendência 1H': tendencia_1h,
+                'Tendência 30M': tendencia_30m,
+            })
+        except Exception:
+            continue
+    return pd.DataFrame(resultados)
+
+
+# ===================== EVOLVED SCANNERS =====================
+
 def scanner_swing_hibrido(ativos, adx_min, rsi_min, rsi_max, vol_ratio_min):
     """
     Scanner Swing Híbrido (Daily + 1H)
@@ -505,8 +911,9 @@ with st.expander("📖 Legenda dos Indicadores", expanded=False):
 
 # ===================== CONTROLE DE ESTADO =====================
 scanners_keys = ['df_hibrido', 'df_rr', 'df_pro', 'df_exp']
+legacy_keys = ['df_legacy_prof', 'df_legacy_intra', 'df_legacy_exp']
 
-for key in scanners_keys:
+for key in scanners_keys + legacy_keys:
     if key not in st.session_state:
         st.session_state[key] = None
 
@@ -771,6 +1178,152 @@ run_scanner(
 # Feedback visual após atualização
 if rodar_todos:
     st.toast("✅ Scanners atualizados com sucesso!", icon="🎉")
+
+st.markdown("---")
+st.caption(f"Última atualização: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}")
+
+# ===================== LEGACY PANEL =====================
+st.markdown("---")
+st.markdown("## 📚 LEGACY - VERSÕES ANTIGAS (COMPARAÇÃO)")
+st.caption("Compare os resultados dos scanners evoluídos com as versões antigas/legadas")
+
+# Legacy Scanner 1: Profissional
+with st.expander("🔮 Legacy - Profissional (Final Corrigida)", expanded=False):
+    st.caption("Multi-timeframe simples: Daily + 1H + 30M | Filtros: Vol>1.5x, EMA20/50, ADX>20, RSI 45-75")
+
+    if rodar_todos or st.session_state['df_legacy_prof'] is None:
+        with st.spinner("Analisando Legacy Profissional..."):
+            st.session_state['df_legacy_prof'] = legacy_profissional(ativos_global)
+
+    if st.session_state['df_legacy_prof'] is not None and not st.session_state['df_legacy_prof'].empty:
+        col1, col2 = st.columns(2)
+        with col1:
+            st.metric("Total Ativos", len(st.session_state['df_legacy_prof']))
+        with col2:
+            forte = len(st.session_state['df_legacy_prof'][st.session_state['df_legacy_prof']['Alinhamento'] == '✅ FORTE'])
+            st.metric("Alinhamento Forte", forte)
+
+        # Ordenar por Score Total
+        df_sorted = st.session_state['df_legacy_prof'].sort_values('Score Total', ascending=False).reset_index(drop=True)
+
+        column_config_legacy = {
+            'Preço': st.column_config.NumberColumn('Preço (R$)', format="R$ %.2f"),
+            'Vol Ratio': st.column_config.NumberColumn('Vol Ratio', format="%.2f"),
+            'RSI Daily': st.column_config.NumberColumn('RSI Daily', format="%.1f"),
+            'ADX Daily': st.column_config.NumberColumn('ADX Daily', format="%.1f"),
+            'RSI 1H': st.column_config.NumberColumn('RSI 1H', format="%.1f"),
+            'ADX 1H': st.column_config.NumberColumn('ADX 1H', format="%.1f"),
+            'RSI 30M': st.column_config.NumberColumn('RSI 30M', format="%.1f"),
+            'ADX 30M': st.column_config.NumberColumn('ADX 30M', format="%.1f"),
+            'Score Daily': st.column_config.NumberColumn('Score Daily', format="%d"),
+            'Score 1H': st.column_config.NumberColumn('Score 1H', format="%d"),
+            'Score 30M': st.column_config.NumberColumn('Score 30M', format="%d"),
+            'Score Total': st.column_config.NumberColumn('Score Total', format="%d"),
+        }
+
+        st.dataframe(
+            df_sorted,
+            use_container_width=True,
+            hide_index=True,
+            column_config=column_config_legacy,
+        )
+
+        st.success(f"{len(df_sorted)} ativos encontrados")
+        adicionar_botao_copiar(df_sorted, label="legacy_profissional")
+    else:
+        st.info("Nenhum ativo encontrado com os filtros da versão Profissional.")
+
+
+# Legacy Scanner 2: Intraday/Swing Curto Prazo
+with st.expander("⏰ Legacy - Intraday/Swing Curto Prazo", expanded=False):
+    st.caption("Filtros rigorosos: Vol>1.7x, Liquidez>8M, ADX≥22, RSI 47-73 | Score ponderado: Daily×1.6 + 1H + 30M")
+
+    if rodar_todos or st.session_state['df_legacy_intra'] is None:
+        with st.spinner("Analisando Legacy Intraday/Swing..."):
+            st.session_state['df_legacy_intra'] = legacy_intraday_swing(ativos_global)
+
+    if st.session_state['df_legacy_intra'] is not None and not st.session_state['df_legacy_intra'].empty:
+        col1, col2 = st.columns(2)
+        with col1:
+            st.metric("Total Ativos", len(st.session_state['df_legacy_intra']))
+        with col2:
+            forte = len(st.session_state['df_legacy_intra'][st.session_state['df_legacy_intra']['Alinhamento'] == '✅ FORTE'])
+            st.metric("Alinhamento Forte", forte)
+
+        # Ordenar por Score Total
+        df_sorted = st.session_state['df_legacy_intra'].sort_values('Score Total', ascending=False).reset_index(drop=True)
+
+        column_config_legacy2 = {
+            'Preço': st.column_config.NumberColumn('Preço (R$)', format="R$ %.2f"),
+            'Vol Ratio D': st.column_config.NumberColumn('Vol Ratio D', format="%.2f"),
+            'Vol Ratio H': st.column_config.NumberColumn('Vol Ratio H', format="%.2f"),
+            'RSI Daily': st.column_config.NumberColumn('RSI Daily', format="%.1f"),
+            'ADX Daily': st.column_config.NumberColumn('ADX Daily', format="%.1f"),
+            'RSI 1H': st.column_config.NumberColumn('RSI 1H', format="%.1f"),
+            'ADX 1H': st.column_config.NumberColumn('ADX 1H', format="%.1f"),
+            'Score 30M': st.column_config.NumberColumn('Score 30M', format="%d"),
+            'Score Total': st.column_config.NumberColumn('Score Total', format="%d"),
+        }
+
+        st.dataframe(
+            df_sorted,
+            use_container_width=True,
+            hide_index=True,
+            column_config=column_config_legacy2,
+        )
+
+        st.success(f"{len(df_sorted)} ativos encontrados")
+        adicionar_botao_copiar(df_sorted, label="legacy_intraday")
+    else:
+        st.info("Nenhum ativo encontrado com os filtros da versão Intraday/Swing.")
+
+
+# Legacy Scanner 3: Expandida
+with st.expander("🌐 Legacy - Expandida (Mid + Small Caps)", expanded=False):
+    st.caption("Lista completa (Blue + Mid/Small) | Vol médio relaxado (≥2.5M) | Confluência multi-TF detalhada")
+
+    if rodar_todos or st.session_state['df_legacy_exp'] is None:
+        with st.spinner("Analisando Legacy Expandida..."):
+            st.session_state['df_legacy_exp'] = legacy_expandida(ativos_global)
+
+    if st.session_state['df_legacy_exp'] is not None and not st.session_state['df_legacy_exp'].empty:
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("Total Ativos", len(st.session_state['df_legacy_exp']))
+        with col2:
+            excelentes = len(st.session_state['df_legacy_exp'][st.session_state['df_legacy_exp']['Confluência Geral'] == 'Excelente ✅✅'])
+            st.metric("Confluência Excelente", excelentes)
+        with col3:
+            boas = len(st.session_state['df_legacy_exp'][st.session_state['df_legacy_exp']['Confluência Geral'].isin(['Boa ✅', 'Excelente ✅✅'])])
+            st.metric("Confluência Boa+", boas)
+
+        # Ordenar por Score Diário
+        df_sorted = st.session_state['df_legacy_exp'].sort_values('Score Diário', ascending=False).reset_index(drop=True)
+
+        column_config_legacy3 = {
+            'Preço': st.column_config.NumberColumn('Preço (R$)', format="R$ %.2f"),
+            'Vol Ratio': st.column_config.NumberColumn('Vol Ratio', format="%.2f"),
+            'Vol Médio (M)': st.column_config.NumberColumn('Vol Médio (M)', format="%.1f"),
+            'RSI Daily': st.column_config.NumberColumn('RSI Daily', format="%.1f"),
+            'ADX Daily': st.column_config.NumberColumn('ADX Daily', format="%.1f"),
+            'RSI 1H': st.column_config.NumberColumn('RSI 1H', format="%.1f"),
+            'ADX 1H': st.column_config.NumberColumn('ADX 1H', format="%.1f"),
+            'RSI 30M': st.column_config.NumberColumn('RSI 30M', format="%.1f"),
+            'ADX 30M': st.column_config.NumberColumn('ADX 30M', format="%.1f"),
+            'Score Diário': st.column_config.NumberColumn('Score Diário', format="%d"),
+        }
+
+        st.dataframe(
+            df_sorted,
+            use_container_width=True,
+            hide_index=True,
+            column_config=column_config_legacy3,
+        )
+
+        st.success(f"{len(df_sorted)} ativos encontrados")
+        adicionar_botao_copiar(df_sorted, label="legacy_expandida")
+    else:
+        st.info("Nenhum ativo encontrado com os filtros da versão Expandida.")
 
 st.markdown("---")
 st.caption(f"Última atualização: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}")
