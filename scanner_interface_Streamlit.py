@@ -45,22 +45,22 @@ ATIVOS_COMPLETO = ATIVOS_BLUE_CHIPS + ATIVOS_MID_SMALL_CAPS
 # Ações - Bancos / Financeiras / Seguros
 UNIV_BANCOS = [
     'ITUB4.SA', 'BBAS3.SA', 'BBDC4.SA', 'BBDC3.SA', 'SANB11.SA',
-    'BPAC11.SA', 'ITSA4.SA', 'BBSE3.SA', 'CIEL3.SA', 'IRBR3.SA',
-    'PSSA3.SA', 'BPAN4.SA', 'BRSR6.SA', 'ABCB4.SA', 'BMGB4.SA',
+    'BPAC11.SA', 'ITSA4.SA', 'BBSE3.SA', 'PSSA3.SA', 'BRSR6.SA',
+    'ABCB4.SA', 'BMGB4.SA',
 ]
 
 # Ações - Energia Elétrica
 UNIV_ENERGIA = [
-    'ELET3.SA', 'ELET6.SA', 'EQTL3.SA', 'CMIG4.SA', 'CPFE3.SA',
-    'ENGI11.SA', 'CPLE6.SA', 'NEOE3.SA', 'AURE3.SA', 'TAEE11.SA',
-    'EGIE3.SA', 'AESB3.SA', 'TRPL4.SA', 'COCE5.SA', 'ENEV3.SA',
+    'EQTL3.SA', 'CMIG4.SA', 'CPFE3.SA',
+    'ENGI11.SA', 'CPLE3.SA', 'NEOE3.SA', 'AURE3.SA', 'TAEE11.SA',
+    'EGIE3.SA', 'COCE5.SA', 'ENEV3.SA',
     'CSMG3.SA', 'SBSP3.SA', 'SAPR11.SA',
 ]
 
 # Ações - Petróleo / Gás / Distribuição
 UNIV_PETROLEO = [
     'PETR4.SA', 'PETR3.SA', 'PRIO3.SA', 'CSAN3.SA', 'UGPA3.SA',
-    'VBBR3.SA', 'RECV3.SA', 'RRRP3.SA', 'RAIZ4.SA',
+    'VBBR3.SA', 'RECV3.SA', 'RAIZ4.SA',
 ]
 
 # Ações - Mineração / Siderurgia / Metalurgia
@@ -71,9 +71,8 @@ UNIV_MINERACAO = [
 
 # Ações - Varejo / Consumo
 UNIV_VAREJO = [
-    'LREN3.SA', 'MGLU3.SA', 'PETZ3.SA', 'ARZZ3.SA', 'SOMA3.SA',
-    'GRND3.SA', 'ALPA4.SA', 'CEAB3.SA', 'GUAR3.SA', 'LJQQ3.SA',
-    'BHIA3.SA', 'AMAR3.SA', 'VULC3.SA',
+    'LREN3.SA', 'MGLU3.SA', 'GRND3.SA', 'ALPA4.SA', 'CEAB3.SA',
+    'RIAA3.SA', 'LJQQ3.SA', 'BHIA3.SA', 'AMAR3.SA', 'VULC3.SA',
 ]
 
 # Ações - Saúde / Farmacêutica
@@ -91,21 +90,21 @@ UNIV_IMOBILIARIO = [
 
 # Ações - Alimentos / Agro / Bebidas
 UNIV_ALIMENTOS = [
-    'ABEV3.SA', 'JBSS3.SA', 'BRFS3.SA', 'MRFG3.SA', 'BEEF3.SA',
+    'ABEV3.SA', 'JBSS32.SA', 'BRFT11.SA', 'MBRF3.SA', 'BEEF3.SA',
     'MDIA3.SA', 'SMTO3.SA', 'SLCE3.SA', 'AGRO3.SA', 'CAML3.SA',
-    'JALL3.SA', 'NTCO3.SA',
+    'JALL3.SA',
 ]
 
 # Ações - Transportes / Logística / Aéreas
 UNIV_TRANSPORTES = [
-    'AZUL4.SA', 'GOLL4.SA', 'CCRO3.SA', 'ECOR3.SA', 'EMBR3.SA',
-    'RAIL3.SA', 'STBP3.SA', 'TGMA3.SA', 'HBSA3.SA', 'LOGN3.SA',
+    'ECOR3.SA', 'EMBJ3.SA',
+    'RAIL3.SA', 'TGMA3.SA', 'HBSA3.SA', 'LOGN3.SA',
 ]
 
 # Ações - Telecom / Tecnologia
 UNIV_TECH = [
     'VIVT3.SA', 'TIMS3.SA', 'TOTS3.SA', 'LWSA3.SA', 'POSI3.SA',
-    'INTB3.SA', 'CASH3.SA', 'BMOB3.SA', 'MLAS3.SA', 'SQIA3.SA',
+    'INTB3.SA', 'CASH3.SA', 'BMOB3.SA', 'MLAS3.SA',
     'DESK3.SA', 'SEQL3.SA',
 ]
 
@@ -131,33 +130,31 @@ UNIV_EDUCACAO = [
 # BDRs - Tecnologia
 BDR_TECH = [
     'AAPL34.SA', 'MSFT34.SA', 'AMZO34.SA', 'GOGL34.SA', 'NVDC34.SA',
-    'META34.SA', 'TSLA34.SA', 'NFLX34.SA', 'ADBE34.SA', 'ORCL34.SA',
-    'CSCO34.SA', 'AVGO34.SA', 'QCOM34.SA', 'INTC34.SA', 'A1MD34.SA',
-    'PYPL34.SA', 'U1BE34.SA', 'S1PO34.SA', 'S1NO34.SA', 'C1RM34.SA',
-    'P1LT34.SA',
+    'TSLA34.SA', 'NFLX34.SA', 'ADBE34.SA', 'ORCL34.SA',
+    'CSCO34.SA', 'AVGO34.SA', 'QCOM34.SA', 'A1MD34.SA',
+    'PYPL34.SA', 'U1BE34.SA', 'S1PO34.SA',
 ]
 
 # BDRs - Finanças
 BDR_FINANCAS = [
     'JPMC34.SA', 'BOAC34.SA', 'GSGI34.SA', 'MSBR34.SA', 'BERK34.SA',
-    'VISA34.SA', 'MAST34.SA', 'A1XP34.SA',
+    'VISA34.SA',
 ]
 
 # BDRs - Consumo / Varejo
 BDR_CONSUMO = [
     'COCA34.SA', 'PEPB34.SA', 'MCDC34.SA', 'NIKE34.SA', 'SBUB34.SA',
-    'PGCO34.SA', 'WALM34.SA', 'COST34.SA', 'HOME34.SA', 'DISB34.SA',
+    'PGCO34.SA', 'WALM34.SA', 'HOME34.SA', 'DISB34.SA',
 ]
 
 # BDRs - Saúde / Farma
 BDR_SAUDE = [
     'JNJB34.SA', 'PFIZ34.SA', 'MRCK34.SA', 'ABBV34.SA', 'LILY34.SA',
-    'A1MG34.SA',
 ]
 
 # BDRs - Industrial / Energia / Outros
 BDR_INDUSTRIAL = [
-    'BOING34.SA', 'CATP34.SA', 'HONB34.SA', 'GEOO41.SA', 'MMMC34.SA',
+    'CATP34.SA', 'HONB34.SA', 'MMMC34.SA',
     'EXXO34.SA', 'CHVX34.SA', 'DHER34.SA',
 ]
 
@@ -167,10 +164,10 @@ ETFS_B3 = [
     'BOVA11.SA', 'BOVV11.SA', 'SMAL11.SA', 'XBOV11.SA', 'DIVO11.SA',
     'MATB11.SA', 'FIND11.SA', 'GOVE11.SA', 'PIBB11.SA',
     # Índices Internacionais
-    'IVVB11.SA', 'SPXI11.SA', 'NASD11.SA', 'EURP11.SA',
+    'IVVB11.SA', 'SPXI11.SA', 'NASD11.SA',
     # Temáticos / Setoriais
     'HASH11.SA', 'QBTC11.SA', 'ETHE11.SA', 'GOLD11.SA',
-    'TECK11.SA', 'SHOT11.SA', 'JURO11.SA',
+    'TECK11.SA', 'JURO11.SA',
     # Renda Fixa
     'IMAB11.SA', 'IRFM11.SA', 'B5P211.SA', 'FIXA11.SA',
 ]
@@ -180,7 +177,7 @@ FIIS_B3 = [
     # Logístico
     'HGLG11.SA', 'BTLG11.SA', 'XPLG11.SA', 'VILG11.SA', 'BRCO11.SA',
     # Shopping / Varejo
-    'XPML11.SA', 'VISC11.SA', 'HSML11.SA', 'MALL11.SA',
+    'XPML11.SA', 'VISC11.SA', 'HSML11.SA',
     # Lajes Corporativas
     'KNRI11.SA', 'PVBI11.SA', 'JSRE11.SA', 'BRCR11.SA', 'RCRB11.SA',
     # Papel (CRI / CRA)
@@ -188,7 +185,7 @@ FIIS_B3 = [
     'VGIP11.SA', 'KNCR11.SA', 'HGCR11.SA',
     # Híbridos / Diversificados
     'HGBS11.SA', 'ALZR11.SA', 'TRXF11.SA', 'TGAR11.SA',
-    'BCFF11.SA', 'RBRF11.SA',
+    'RBRF11.SA',
 ]
 
 # ===================== LISTA MASTER COMBINADA =====================
@@ -1005,7 +1002,7 @@ st.subheader("⚙️ Painel de Controle Global")
 # Só o botão de submit (Atualizar Scanners) dispara o rerun.
 with st.form("painel_controle"):
     # Row 1: Radio button
-    lista_global = st.radio("Lista de ativos", ["Todos", "Blue Chips"], horizontal=True)
+    lista_global = st.radio("Lista de ativos", ["Blue Chips", "Todos", "Universal"], horizontal=True)
 
     # Row 2: Volume + ADX + RSI Min + RSI Max sliders
     col_vol, col_adx, col_rsi_min, col_rsi_max = st.columns(4)
@@ -1053,7 +1050,12 @@ with st.form("painel_controle"):
     # Botão de submit do form — único gatilho de rerun
     rodar_todos = st.form_submit_button("🔄 Atualizar Scanners", type="primary", use_container_width=True)
 
-ativos_global = ATIVOS_BLUE_CHIPS if lista_global == "Blue Chips" else ATIVOS_COMPLETO
+if lista_global == "Blue Chips":
+    ativos_global = ATIVOS_BLUE_CHIPS
+elif lista_global == "Universal":
+    ativos_global = ATIVOS_B3_AMPLIADO
+else:
+    ativos_global = ATIVOS_COMPLETO
 
 # ===================== LEGENDA =====================
 with st.expander("📖 Legenda dos Indicadores", expanded=False):
@@ -1085,36 +1087,40 @@ with st.expander("📖 Legenda dos Indicadores", expanded=False):
         """)
 
 # ===================== ATIVOS EM USO =====================
-with st.expander(f"📋 Ativos em uso no modo normal ({len(ativos_global)} ativos)", expanded=False):
-    col_at1, col_at2, col_at3 = st.columns(3)
-    with col_at1:
-        blue_chips_nomes = [s.replace('.SA', '') for s in ATIVOS_BLUE_CHIPS]
-        st.markdown(f"**🔵 Blue Chips ({len(ATIVOS_BLUE_CHIPS)}):**")
-        st.markdown(", ".join([f"`{a}`" for a in blue_chips_nomes]))
-    with col_at2:
-        if lista_global == "Todos":
-            mid_small_nomes = [s.replace('.SA', '') for s in ATIVOS_MID_SMALL_CAPS]
-            st.markdown(f"**🟢 Mid / Small Caps ({len(ATIVOS_MID_SMALL_CAPS)}):**")
-            st.markdown(", ".join([f"`{a}`" for a in mid_small_nomes]))
-        else:
-            st.info("Selecione **Todos** no Painel de Controle para incluir Mid/Small Caps.")
-    with col_at3:
-        st.markdown(f"**🔍 Busca Universal ({len(ATIVOS_B3_AMPLIADO)} ativos):**")
-        for cat, qtd in CONTAGEM_CATEGORIAS.items():
-            st.markdown(f"- {cat}: **{qtd}**")
+with st.expander(f"📋 Ativos em uso — modo: {lista_global} ({len(ativos_global)} ativos)", expanded=False):
+    if lista_global == "Universal":
+        col_u1, col_u2 = st.columns(2)
+        with col_u1:
+            st.markdown(f"**🔍 Universo completo ({len(ATIVOS_B3_AMPLIADO)} ativos):**")
+            for cat, qtd in CONTAGEM_CATEGORIAS.items():
+                st.markdown(f"- {cat}: **{qtd}**")
+        with col_u2:
+            st.warning("⚠️ O modo Universal analisa **todos** os ativos cadastrados. O scan pode demorar vários minutos.")
+    else:
+        col_at1, col_at2 = st.columns(2)
+        with col_at1:
+            blue_chips_nomes = [s.replace('.SA', '') for s in ATIVOS_BLUE_CHIPS]
+            st.markdown(f"**🔵 Blue Chips ({len(ATIVOS_BLUE_CHIPS)}):**")
+            st.markdown(", ".join([f"`{a}`" for a in blue_chips_nomes]))
+        with col_at2:
+            if lista_global == "Todos":
+                mid_small_nomes = [s.replace('.SA', '') for s in ATIVOS_MID_SMALL_CAPS]
+                st.markdown(f"**🟢 Mid / Small Caps ({len(ATIVOS_MID_SMALL_CAPS)}):**")
+                st.markdown(", ".join([f"`{a}`" for a in mid_small_nomes]))
+            else:
+                st.info("Selecione **Todos** ou **Universal** para incluir mais ativos.")
 
 # ===================== CONTROLE DE ESTADO =====================
 scanners_keys = ['df_hibrido', 'df_rr', 'df_pro', 'df_exp']
 legacy_keys = ['df_legacy_prof', 'df_legacy_intra', 'df_legacy_exp']
-universal_keys = ['df_univ_hibrido', 'df_univ_rr', 'df_univ_pro', 'df_univ_exp']
 
-for key in scanners_keys + legacy_keys + universal_keys:
+for key in scanners_keys + legacy_keys:
     if key not in st.session_state:
         st.session_state[key] = None
 
 # Quando o form é submetido, limpar cache dos scanners E cache de dados para forçar recálculo
 if rodar_todos:
-    for key in scanners_keys:
+    for key in scanners_keys + legacy_keys:
         st.session_state[key] = None
     # Limpar cache do yfinance para baixar dados frescos
     baixar_dados.clear()
@@ -1380,15 +1386,15 @@ st.caption(f"Última atualização: {datetime.now().strftime('%d/%m/%Y %H:%M:%S'
 # ===================== LEGACY PANEL =====================
 st.markdown("---")
 st.markdown("## 📚 LEGACY - VERSÕES ANTIGAS (COMPARAÇÃO)")
-st.caption(f"Compare os resultados dos scanners evoluídos com as versões antigas/legadas | Todos os {len(ATIVOS_B3_AMPLIADO)} ativos")
+st.caption(f"Compare os resultados dos scanners evoluídos com as versões antigas/legadas | {len(ativos_global)} ativos ({lista_global})")
 
 # Legacy Scanner 1: Profissional
 with st.expander("🔮 Legacy - Profissional (Final Corrigida)", expanded=False):
-    st.caption(f"Multi-timeframe: Daily + 1H + 30M | Filtros: Vol>1.5x, EMA20/50, ADX>20, RSI 45-75 | {len(ATIVOS_B3_AMPLIADO)} ativos")
+    st.caption(f"Multi-timeframe: Daily + 1H + 30M | Filtros: Vol>1.5x, EMA20/50, ADX>20, RSI 45-75 | {len(ativos_global)} ativos ({lista_global})")
 
     if rodar_todos or st.session_state['df_legacy_prof'] is None:
         with st.spinner("Analisando Legacy Profissional..."):
-            st.session_state['df_legacy_prof'] = legacy_profissional(ATIVOS_B3_AMPLIADO)
+            st.session_state['df_legacy_prof'] = legacy_profissional(ativos_global)
 
     if st.session_state['df_legacy_prof'] is not None and not st.session_state['df_legacy_prof'].empty:
         col1, col2 = st.columns(2)
@@ -1431,11 +1437,11 @@ with st.expander("🔮 Legacy - Profissional (Final Corrigida)", expanded=False)
 
 # Legacy Scanner 2: Intraday/Swing Curto Prazo
 with st.expander("⏰ Legacy - Intraday/Swing Curto Prazo", expanded=False):
-    st.caption(f"Filtros rigorosos: Vol>1.7x, Liquidez>8M, ADX≥22, RSI 47-73 | Score ponderado: Daily×1.6 + 1H + 30M | {len(ATIVOS_B3_AMPLIADO)} ativos")
+    st.caption(f"Filtros rigorosos: Vol>1.7x, Liquidez>8M, ADX≥22, RSI 47-73 | Score ponderado: Daily×1.6 + 1H + 30M | {len(ativos_global)} ativos ({lista_global})")
 
     if rodar_todos or st.session_state['df_legacy_intra'] is None:
         with st.spinner("Analisando Legacy Intraday/Swing..."):
-            st.session_state['df_legacy_intra'] = legacy_intraday_swing(ATIVOS_B3_AMPLIADO)
+            st.session_state['df_legacy_intra'] = legacy_intraday_swing(ativos_global)
 
     if st.session_state['df_legacy_intra'] is not None and not st.session_state['df_legacy_intra'].empty:
         col1, col2 = st.columns(2)
@@ -1475,11 +1481,11 @@ with st.expander("⏰ Legacy - Intraday/Swing Curto Prazo", expanded=False):
 
 # Legacy Scanner 3: Expandida
 with st.expander("🌐 Legacy - Expandida (Mid + Small Caps)", expanded=False):
-    st.caption(f"Vol médio relaxado (≥2.5M) | Confluência multi-TF detalhada | {len(ATIVOS_B3_AMPLIADO)} ativos")
+    st.caption(f"Vol médio relaxado (≥2.5M) | Confluência multi-TF detalhada | {len(ativos_global)} ativos ({lista_global})")
 
     if rodar_todos or st.session_state['df_legacy_exp'] is None:
         with st.spinner("Analisando Legacy Expandida..."):
-            st.session_state['df_legacy_exp'] = legacy_expandida(ATIVOS_B3_AMPLIADO)
+            st.session_state['df_legacy_exp'] = legacy_expandida(ativos_global)
 
     if st.session_state['df_legacy_exp'] is not None and not st.session_state['df_legacy_exp'].empty:
         col1, col2, col3 = st.columns(3)
@@ -1519,117 +1525,6 @@ with st.expander("🌐 Legacy - Expandida (Mid + Small Caps)", expanded=False):
         adicionar_botao_copiar(df_sorted, label="legacy_expandida")
     else:
         st.info("Nenhum ativo encontrado com os filtros da versão Expandida.")
-
-# ===================== BUSCA UNIVERSAL - MESMOS SCANNERS, TODOS OS ATIVOS =====================
-st.markdown("---")
-st.markdown("## 🔍 BUSCA UNIVERSAL - TODOS OS ATIVOS DA B3")
-
-# Calcular ativos extras (não incluídos nos scanners principais)
-ativos_ja_escaneados = set(ativos_global)
-ativos_universais = sorted([a for a in ATIVOS_B3_AMPLIADO if a not in ativos_ja_escaneados])
-
-st.caption(f"Aplica os mesmos 4 scanners em **{len(ativos_universais)}** ativos adicionais (excluindo {len(ativos_ja_escaneados)} já analisados acima) | Mesmos filtros dos sliders")
-
-with st.expander("ℹ️ Como funciona a Busca Universal", expanded=False):
-    col_info1, col_info2 = st.columns(2)
-    with col_info1:
-        st.markdown("""
-        **Metodologia idêntica aos scanners primários:**
-        - 🔀 **Híbrido**: Daily + confirmação 1H
-        - 🎯 **RR**: Stop (ATR×1.8) + Alvos 1:2 e 1:3
-        - 🏆 **Profissional**: ADX Rising + DI+ > DI- + Tríade obrigatórios
-        - 🌐 **Expandido**: Vol médio mínimo 2.5M
-        
-        Todos usam os mesmos parâmetros dos sliders.
-        """)
-    with col_info2:
-        cat_text = "\n".join([f"        - **{cat}**: {qtd}" for cat, qtd in CONTAGEM_CATEGORIAS.items()])
-        st.markdown(f"""
-        **Universo de Ativos ({len(ATIVOS_B3_AMPLIADO)} total):**
-{cat_text}
-        
-        *Ativos já analisados acima são excluídos.*
-        """)
-
-buscar_universal = st.button(
-    f"🔍 Executar 4 Scanners em {len(ativos_universais)} Ativos Adicionais",
-    type="primary",
-    use_container_width=True
-)
-
-if buscar_universal:
-    baixar_dados.clear()
-    progress = st.progress(0)
-    status = st.empty()
-
-    status.text("🔀 [1/4] Executando Scanner Híbrido...")
-    progress.progress(0.05)
-    st.session_state['df_univ_hibrido'] = scanner_swing_hibrido(
-        ativos_universais, adx_min, rsi_min, rsi_max, min_vol_ratio
-    )
-
-    status.text("🎯 [2/4] Executando Scanner RR...")
-    progress.progress(0.30)
-    st.session_state['df_univ_rr'] = scanner_swing_rr(
-        ativos_universais, adx_min, rsi_min, rsi_max, min_vol_ratio
-    )
-
-    status.text("🏆 [3/4] Executando Scanner Profissional...")
-    progress.progress(0.55)
-    st.session_state['df_univ_pro'] = scanner_swing_profissional(
-        ativos_universais, adx_min, rsi_min, rsi_max, min_vol_ratio
-    )
-
-    status.text("🌐 [4/4] Executando Scanner Expandido...")
-    progress.progress(0.80)
-    st.session_state['df_univ_exp'] = scanner_swing_expandido(
-        adx_min, rsi_min, rsi_max, min_vol_ratio, ativos=ativos_universais
-    )
-
-    progress.progress(1.0)
-    status.empty()
-    progress.empty()
-    st.toast("✅ Busca universal concluída!", icon="🔍")
-
-# Exibir resultados usando o mesmo helper dos scanners primários
-has_universal_data = any(
-    st.session_state.get(k) is not None for k in universal_keys
-)
-
-if has_universal_data:
-    # Scanner 1: Híbrido Universal
-    run_scanner(
-        "🔀 Híbrido (Universal)",
-        lambda: st.session_state['df_univ_hibrido'],
-        'df_univ_hibrido',
-        descricao="Mesma metodologia do Swing Híbrido aplicada a todos os ativos adicionais."
-    )
-
-    # Scanner 2: RR Universal
-    run_scanner(
-        "🎯 RR (Universal)",
-        lambda: st.session_state['df_univ_rr'],
-        'df_univ_rr',
-        descricao="Mesma metodologia do Swing RR com Stop/Alvos aplicada a todos os ativos adicionais."
-    )
-
-    # Scanner 3: Profissional Universal
-    run_scanner(
-        "🏆 Profissional (Universal)",
-        lambda: st.session_state['df_univ_pro'],
-        'df_univ_pro',
-        descricao="Mesma metodologia do Swing Profissional (filtros rigorosos) aplicada a todos os ativos adicionais."
-    )
-
-    # Scanner 4: Expandido Universal
-    run_scanner(
-        "🌐 Expandido (Universal)",
-        lambda: st.session_state['df_univ_exp'],
-        'df_univ_exp',
-        descricao="Mesma metodologia do Swing Expandido aplicada a todos os ativos adicionais."
-    )
-else:
-    st.info("👆 Clique no botão acima para executar os 4 scanners em todos os ativos da B3.")
 
 st.markdown("---")
 st.caption(f"Última atualização: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}")
