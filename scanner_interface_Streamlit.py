@@ -9,7 +9,6 @@ SCANNER CONSOLIDADO - VERSÃO MELHORADA
 """
 
 import streamlit as st
-import streamlit.components.v1 as components
 import pandas as pd
 import yfinance as yf
 import pandas_ta as ta
@@ -1264,7 +1263,7 @@ with st.form("painel_controle"):
         )
 
     # Botão de submit do form — único gatilho de rerun
-    rodar_todos = st.form_submit_button("🔄 Atualizar Scanners", type="primary", use_container_width=True)
+    rodar_todos = st.form_submit_button("🔄 Atualizar Scanners", type="primary", width='stretch')
 
 if lista_global == "Blue Chips":
     ativos_global = ATIVOS_BLUE_CHIPS
@@ -1397,7 +1396,7 @@ def exibir_dataframe_colorido(df_resultado):
 
     st.dataframe(
         df_resultado,
-        use_container_width=True,
+        width='stretch',
         hide_index=True,
         column_config=column_config,
     )
@@ -1561,7 +1560,7 @@ Seja objetivo, direto e conservador. Se não houver setups bons, diga claramente
         }});
     </script>
     """
-    components.html(copy_html, height=55)
+    st.iframe(copy_html, height=55)
 
 
 # ===================== EXECUÇÃO DOS SCANNERS =====================
@@ -1636,7 +1635,7 @@ with st.expander("🔥 Swing Trade Fusion — Best of Legacy + Evolved", expande
 
         st.dataframe(
             df_sorted,
-            use_container_width=True,
+            width='stretch',
             hide_index=True,
             column_config=column_config_fusion,
         )
@@ -1730,7 +1729,7 @@ with st.expander("🔮 Legacy - Profissional (Final Corrigida)", expanded=True):
 
         st.dataframe(
             df_sorted,
-            use_container_width=True,
+            width='stretch',
             hide_index=True,
             column_config=column_config_legacy,
         )
@@ -1774,7 +1773,7 @@ with st.expander("⏰ Legacy - Intraday/Swing Curto Prazo", expanded=True):
 
         st.dataframe(
             df_sorted,
-            use_container_width=True,
+            width='stretch',
             hide_index=True,
             column_config=column_config_legacy2,
         )
@@ -1822,7 +1821,7 @@ with st.expander("🌐 Legacy - Expandida (Mid + Small Caps)", expanded=True):
 
         st.dataframe(
             df_sorted,
-            use_container_width=True,
+            width='stretch',
             hide_index=True,
             column_config=column_config_legacy3,
         )
