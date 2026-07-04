@@ -19,25 +19,11 @@ st.set_page_config(page_title="Scanner Ações BR", layout="wide", page_icon="�
 st.title("📈 SCANNER CONSOLIDADO DE AÇÕES - BRASIL")
 
 # ===================== THRESHOLDS PADRÃO =====================
-DEFAULT_ADX_MIN = 23
-DEFAULT_RSI_MIN = 52
-DEFAULT_RSI_MAX = 70
-DEFAULT_VOL_RATIO = 1.6
+DEFAULT_ADX_MIN = 15
+DEFAULT_RSI_MIN = 40
+DEFAULT_RSI_MAX = 80
+DEFAULT_VOL_RATIO = 1.0
 ADX_RISING_PERIODS = 5
-
-# ===================== LISTA DE ATIVOS =====================
-ATIVOS_BLUE_CHIPS = [
-    'PETR4.SA', 'VALE3.SA', 'ITUB4.SA', 'PRIO3.SA', 'BBAS3.SA',
-    'B3SA3.SA', 'BBDC4.SA', 'BPAC11.SA', 'BOVA11.SA'
-]
-
-ATIVOS_MID_SMALL_CAPS = [
-    'RENT3.SA', 'LREN3.SA', 'MGLU3.SA', 'HAPV3.SA', 'EQTL3.SA',
-    'SBSP3.SA', 'TOTS3.SA', 'RAIL3.SA', 'CSNA3.SA', 'GGBR4.SA',
-    'PLPL3.SA', 'CURY3.SA', 'BMOB3.SA', 'TAEE11.SA', 'SEQL3.SA'
-]
-
-ATIVOS_COMPLETO = ATIVOS_BLUE_CHIPS + ATIVOS_MID_SMALL_CAPS
 
 # ===================== LISTAS POR CATEGORIA (BUSCA UNIVERSAL) =====================
 
@@ -290,22 +276,23 @@ def analisar_ativo_completo(df, adx_min, rsi_min, rsi_max, vol_ratio_min):
         sinais_saida.append("⚠️ RSI↑")
     sinal_saida = " | ".join(sinais_saida) if sinais_saida else "✅"
 
-    # Score
-    score = 0
+    # Score (normalizado para 0-100)
+    score_raw = 0
     if preco > ema20:
-        score += 20
+        score_raw += 20
     if preco > ema50:
-        score += 15
+        score_raw += 15
     if triade_adx:
-        score += 20
+        score_raw += 20
     if triade_rsi:
-        score += 20
+        score_raw += 20
     if triade_vol:
-        score += 15
+        score_raw += 15
     if adx_rising:
-        score += 10
+        score_raw += 10
     if plus_di > minus_di:
-        score += 10
+        score_raw += 10
+    score = round((score_raw / 110) * 100)
 
     return {
         'preco': preco,
@@ -939,14 +926,14 @@ def scanner_swing_profissional(ativos, adx_min, rsi_min, rsi_max, vol_ratio_min)
 def scanner_swing_expandido(adx_min, rsi_min, rsi_max, vol_ratio_min, ativos=None):
     """
     Scanner Swing Expandido (Mid + Small Caps)
-    - Usa ATIVOS_COMPLETO por padrão (ou lista fornecida)
+    - Usa lista universal por padrão (ou lista fornecida)
     - Volume threshold levemente relaxado (vol_medio mínimo menor)
     - Tríade completa
     """
     resultados = []
-    # Usa a lista fornecida ou a lista completa padrão
+    # Usa a lista fornecida ou a lista universal completa
     if ativos is None:
-        ativos = ATIVOS_COMPLETO
+        ativos = ATIVOS_B3_AMPLIADO
 
     for symbol in ativos:
         try:
@@ -1216,10 +1203,7 @@ st.subheader("⚙️ Painel de Controle Global")
 # Usar st.form para que os sliders NÃO disparem rerun automático.
 # Só o botão de submit (Atualizar Scanners) dispara o rerun.
 with st.form("painel_controle"):
-    # Row 1: Radio button
-    lista_global = st.radio("Lista de ativos", ["Blue Chips", "Todos", "Universal"], horizontal=True)
-
-    # Row 2: Volume + ADX + RSI Min + RSI Max sliders
+    # Row 1: Volume + ADX + RSI Min + RSI Max sliders
     col_vol, col_adx, col_rsi_min, col_rsi_max = st.columns(4)
 
     with col_vol:
@@ -1265,12 +1249,9 @@ with st.form("painel_controle"):
     # Botão de submit do form — único gatilho de rerun
     rodar_todos = st.form_submit_button("🔄 Atualizar Scanners", type="primary", width='stretch')
 
-if lista_global == "Blue Chips":
-    ativos_global = ATIVOS_BLUE_CHIPS
-elif lista_global == "Universal":
-    ativos_global = ATIVOS_B3_AMPLIADO
-else:
-    ativos_global = ATIVOS_COMPLETO
+# Usar sempre a lista universal completa
+ativos_global = ATIVOS_B3_AMPLIADO
+lista_global = "Universal"
 
 # ===================== LEGENDA =====================
 with st.expander("📖 Legenda dos Indicadores", expanded=True):
@@ -1302,28 +1283,21 @@ with st.expander("📖 Legenda dos Indicadores", expanded=True):
         """)
 
 # ===================== ATIVOS EM USO =====================
-with st.expander(f"📋 Ativos em uso — modo: {lista_global} ({len(ativos_global)} ativos)", expanded=True):
-    if lista_global == "Universal":
-        col_u1, col_u2 = st.columns(2)
-        with col_u1:
-            st.markdown(f"**🔍 Universo completo ({len(ATIVOS_B3_AMPLIADO)} ativos):**")
-            for cat, qtd in CONTAGEM_CATEGORIAS.items():
-                st.markdown(f"- {cat}: **{qtd}**")
-        with col_u2:
-            st.warning("⚠️ O modo Universal analisa **todos** os ativos cadastrados. O scan pode demorar vários minutos.")
-    else:
-        col_at1, col_at2 = st.columns(2)
-        with col_at1:
-            blue_chips_nomes = [s.replace('.SA', '') for s in ATIVOS_BLUE_CHIPS]
-            st.markdown(f"**🔵 Blue Chips ({len(ATIVOS_BLUE_CHIPS)}):**")
-            st.markdown(", ".join([f"`{a}`" for a in blue_chips_nomes]))
-        with col_at2:
-            if lista_global == "Todos":
-                mid_small_nomes = [s.replace('.SA', '') for s in ATIVOS_MID_SMALL_CAPS]
-                st.markdown(f"**🟢 Mid / Small Caps ({len(ATIVOS_MID_SMALL_CAPS)}):**")
-                st.markdown(", ".join([f"`{a}`" for a in mid_small_nomes]))
-            else:
-                st.info("Selecione **Todos** ou **Universal** para incluir mais ativos.")
+with st.expander(f"📋 Ativos em uso — {len(ativos_global)} ativos", expanded=True):
+    col_u1, col_u2 = st.columns(2)
+
+    with col_u1:
+        st.markdown(f"**🔍 Universo completo ({len(ATIVOS_B3_AMPLIADO)} ativos):**")
+        for cat, qtd in CONTAGEM_CATEGORIAS.items():
+            st.markdown(f"- {cat}: **{qtd}**")
+
+    with col_u2:
+        st.warning("⚠️ Analisando **todos** os ativos cadastrados. O scan pode demorar vários minutos.")
+
+    # Lista completa de todos os símbolos
+    with st.expander("📝 Ver todos os símbolos"):
+        simbolos_ordenados = sorted([s.replace('.SA', '') for s in ATIVOS_B3_AMPLIADO])
+        st.markdown(", ".join([f"`{s}`" for s in simbolos_ordenados]))
 
 # ===================== CONTROLE DE ESTADO =====================
 scanners_keys = ['df_fusion', 'df_hibrido', 'df_rr', 'df_pro', 'df_exp']
