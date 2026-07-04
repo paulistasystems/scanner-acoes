@@ -1429,7 +1429,7 @@ def formatar_dataframe_para_texto(df):
     return "\n".join(linhas)
 
 
-def adicionar_botao_copiar(df, label="resultado"):
+def adicionar_botao_copiar(df, label="resultado", vol_ratio=1.6, adx_min=23, rsi_min=52, rsi_max=70):
     """Adiciona o botão para copiar a análise com o prompt do trader."""
     if df is None or df.empty:
         return
@@ -1481,8 +1481,21 @@ Seja objetivo, direto e conservador. Se não houver setups bons, diga claramente
     # Converter DataFrame para formato textual linear
     dados_textuais = formatar_dataframe_para_texto(df)
 
-    # Combinar prompt + dados
-    texto_completo = prompt_trader + dados_textuais
+    # Configuração dos sliders usados na análise
+    config_sliders = f"""
+
+---
+**Scanner:** {label}
+
+**Configuração dos Filtros Utilizados:**
+• Volume Ratio Mínimo: {vol_ratio}
+• ADX Mínimo: {adx_min}
+• RSI Mínimo: {rsi_min}
+• RSI Máximo: {rsi_max}
+"""
+
+    # Combinar prompt + dados + configuração
+    texto_completo = prompt_trader + dados_textuais + config_sliders
 
     # Escapar para HTML seguro (textarea)
     html_safe = texto_completo.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
@@ -1544,7 +1557,7 @@ Seja objetivo, direto e conservador. Se não houver setups bons, diga claramente
 
 # ===================== EXECUÇÃO DOS SCANNERS =====================
 
-def run_scanner(nome, funcao, key, descricao=""):
+def run_scanner(nome, funcao, key, descricao="", vol_ratio=1.6, adx_min=23, rsi_min=52, rsi_max=70):
     """Executa e exibe um scanner dentro de um expander."""
     with st.expander(nome, expanded=True):
         if descricao:
@@ -1557,7 +1570,7 @@ def run_scanner(nome, funcao, key, descricao=""):
         mostrar_resumo_triade(st.session_state[key])
         exibir_dataframe_colorido(st.session_state[key])
         if st.session_state[key] is not None and not st.session_state[key].empty:
-            adicionar_botao_copiar(st.session_state[key], label=key)
+            adicionar_botao_copiar(st.session_state[key], label=key, vol_ratio=vol_ratio, adx_min=adx_min, rsi_min=rsi_min, rsi_max=rsi_max)
 
 
 # Scanner 0: 🔥 Swing Trade Fusion (HERO SCANNER)
@@ -1620,7 +1633,7 @@ with st.expander("🔥 Swing Trade Fusion — Best of Legacy + Evolved", expande
         )
 
         st.success(f"{len(df_sorted)} ativos encontrados")
-        adicionar_botao_copiar(df_sorted, label="fusion")
+        adicionar_botao_copiar(df_sorted, label="fusion", vol_ratio=min_vol_ratio, adx_min=adx_min, rsi_min=rsi_min, rsi_max=rsi_max)
     else:
         st.info("Nenhum ativo encontrado com os filtros atuais.")
 
@@ -1629,7 +1642,8 @@ run_scanner(
     "🔀 Scanner Swing Híbrido (Daily + 1H)",
     lambda: scanner_swing_hibrido(ativos_global, adx_min, rsi_min, rsi_max, min_vol_ratio),
     'df_hibrido',
-    descricao="Análise Daily com confirmação 1H. Tríade básica."
+    descricao="Análise Daily com confirmação 1H. Tríade básica.",
+    vol_ratio=min_vol_ratio, adx_min=adx_min, rsi_min=rsi_min, rsi_max=rsi_max
 )
 
 # Scanner 2: Swing RR
@@ -1637,7 +1651,8 @@ run_scanner(
     "🎯 Scanner Swing RR (Daily + ATR Targets)",
     lambda: scanner_swing_rr(ativos_global, adx_min, rsi_min, rsi_max, min_vol_ratio),
     'df_rr',
-    descricao="Base Híbrido + Stop (ATR×1.8), Alvos 1:2 e 1:3."
+    descricao="Base Híbrido + Stop (ATR×1.8), Alvos 1:2 e 1:3.",
+    vol_ratio=min_vol_ratio, adx_min=adx_min, rsi_min=rsi_min, rsi_max=rsi_max
 )
 
 # Scanner 3: Swing Profissional
@@ -1645,7 +1660,8 @@ run_scanner(
     "🏆 Scanner Swing Profissional (Daily + 1H + 30M)",
     lambda: scanner_swing_profissional(ativos_global, adx_min, rsi_min, rsi_max, min_vol_ratio),
     'df_pro',
-    descricao="Multi-timeframe completo. ADX Rising + DI+ > DI- + Tríade obrigatórios."
+    descricao="Multi-timeframe completo. ADX Rising + DI+ > DI- + Tríade obrigatórios.",
+    vol_ratio=min_vol_ratio, adx_min=adx_min, rsi_min=rsi_min, rsi_max=rsi_max
 )
 
 # Scanner 4: Swing Expandido
@@ -1653,7 +1669,8 @@ run_scanner(
     "🌐 Scanner Swing Expandido (Mid + Small Caps)",
     lambda: scanner_swing_expandido(adx_min, rsi_min, rsi_max, min_vol_ratio),
     'df_exp',
-    descricao="Lista completa (Blue Chips + Mid/Small). Volume médio mínimo relaxado (2.5M)."
+    descricao="Lista completa (Blue Chips + Mid/Small). Volume médio mínimo relaxado (2.5M).",
+    vol_ratio=min_vol_ratio, adx_min=adx_min, rsi_min=rsi_min, rsi_max=rsi_max
 )
 
 # Feedback visual após atualização
@@ -1710,7 +1727,7 @@ with st.expander("🔮 Legacy - Profissional (Final Corrigida)", expanded=True):
         )
 
         st.success(f"{len(df_sorted)} ativos encontrados")
-        adicionar_botao_copiar(df_sorted, label="legacy_profissional")
+        adicionar_botao_copiar(df_sorted, label="legacy_profissional", vol_ratio=min_vol_ratio, adx_min=adx_min, rsi_min=rsi_min, rsi_max=rsi_max)
     else:
         st.info("Nenhum ativo encontrado com os filtros da versão Profissional.")
 
@@ -1754,7 +1771,7 @@ with st.expander("⏰ Legacy - Intraday/Swing Curto Prazo", expanded=True):
         )
 
         st.success(f"{len(df_sorted)} ativos encontrados")
-        adicionar_botao_copiar(df_sorted, label="legacy_intraday")
+        adicionar_botao_copiar(df_sorted, label="legacy_intraday", vol_ratio=min_vol_ratio, adx_min=adx_min, rsi_min=rsi_min, rsi_max=rsi_max)
     else:
         st.info("Nenhum ativo encontrado com os filtros da versão Intraday/Swing.")
 
@@ -1802,7 +1819,7 @@ with st.expander("🌐 Legacy - Expandida (Mid + Small Caps)", expanded=True):
         )
 
         st.success(f"{len(df_sorted)} ativos encontrados")
-        adicionar_botao_copiar(df_sorted, label="legacy_expandida")
+        adicionar_botao_copiar(df_sorted, label="legacy_expandida", vol_ratio=min_vol_ratio, adx_min=adx_min, rsi_min=rsi_min, rsi_max=rsi_max)
     else:
         st.info("Nenhum ativo encontrado com os filtros da versão Expandida.")
 
