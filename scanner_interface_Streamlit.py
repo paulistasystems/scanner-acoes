@@ -1220,29 +1220,32 @@ def scanner_swing_trade_fusion(ativos, adx_min, rsi_min, rsi_max, vol_ratio_min)
 st.markdown("---")
 st.subheader("⚙️ Painel de Controle Global")
 
-# Usar st.form para que a seleção NÃO dispare rerun automático.
-# Só o botão de submit (Atualizar Scanners) dispara o rerun.
-with st.form("painel_controle"):
-    # Row 1: Perfil de Análise
-    profile_names = list(PROFILES.keys()) + ["🎛️ Personalizado"]
-    perfil_selecionado = st.radio(
-        "🎯 Perfil de Análise",
-        profile_names,
-        index=profile_names.index(DEFAULT_PROFILE),
-        horizontal=True,
-        help="Selecione um perfil predefinido ou Personalizado para ajustar manualmente"
-    )
+# Radio fora do form para atualização imediata da legenda
+profile_names = list(PROFILES.keys()) + ["🎛️ Personalizado"]
+perfil_selecionado = st.radio(
+    "🎯 Perfil de Análise",
+    profile_names,
+    index=profile_names.index(DEFAULT_PROFILE),
+    horizontal=True,
+    help="Selecione um perfil predefinido ou Personalizado para ajustar manualmente"
+)
 
-    if perfil_selecionado in PROFILES:
-        p = PROFILES[perfil_selecionado]
-        min_vol_ratio = p["vol_ratio"]
-        adx_min = p["adx_min"]
-        rsi_min = p["rsi_min"]
-        rsi_max = p["rsi_max"]
-        st.info(f"**{perfil_selecionado}** — {p['desc']}  \n"
-                f"📊 Vol ≥ {p['vol_ratio']}x | 📈 ADX ≥ {p['adx_min']} | "
-                f"⬇️ RSI ≥ {p['rsi_min']} | ⬆️ RSI ≤ {p['rsi_max']}")
-    else:
+# Mostrar legenda do perfil selecionado fora do form (atualiza imediatamente)
+if perfil_selecionado in PROFILES:
+    p = PROFILES[perfil_selecionado]
+    st.info(f"**{perfil_selecionado}** — {p['desc']}  \n"
+            f"📊 Vol ≥ {p['vol_ratio']}x | 📈 ADX ≥ {p['adx_min']} | "
+            f"⬇️ RSI ≥ {p['rsi_min']} | ⬆️ RSI ≤ {p['rsi_max']}")
+    # Set values for use in form
+    min_vol_ratio = p["vol_ratio"]
+    adx_min = p["adx_min"]
+    rsi_min = p["rsi_min"]
+    rsi_max = p["rsi_max"]
+
+# Usar st.form para os sliders e botão de submit
+# Só o botão de submit (Atualizar Scanners) dispara o rerun pesado
+with st.form("painel_controle"):
+    if perfil_selecionado == "🎛️ Personalizado":
         # Personalizado: mostrar sliders
         col_vol, col_adx, col_rsi_min, col_rsi_max = st.columns(4)
         with col_vol:
@@ -1282,7 +1285,7 @@ with st.form("painel_controle"):
                 help="RSI máximo antes de sobrecompra"
             )
 
-    # Botão de submit do form — único gatilho de rerun
+    # Botão de submit do form — único gatilho de rerun pesado
     rodar_todos = st.form_submit_button("🔄 Atualizar Scanners", type="primary", width='stretch')
 
 # Usar sempre a lista universal completa
@@ -1330,10 +1333,17 @@ with st.expander(f"📋 Ativos em uso — {len(ativos_global)} ativos", expanded
     with col_u2:
         st.warning("⚠️ Analisando **todos** os ativos cadastrados. O scan pode demorar vários minutos.")
 
-    # Lista completa de todos os símbolos
+    # Lista completa de todos os símbolos divididos por categoria
     with st.expander("📝 Ver todos os símbolos"):
-        simbolos_ordenados = sorted([s.replace('.SA', '') for s in ATIVOS_B3_AMPLIADO])
-        st.markdown(", ".join([f"`{s}`" for s in simbolos_ordenados]))
+        categorized_symbols = {
+            'Ações': sorted(list(set([s.replace('.SA', '') for s in _ACOES_UNIVERSAL]))),
+            'BDRs': sorted(list(set([s.replace('.SA', '') for s in _BDRS_UNIVERSAL]))),
+            'ETFs': sorted(list(set([s.replace('.SA', '') for s in _ETFS_UNIVERSAL]))),
+            'FIIs': sorted(list(set([s.replace('.SA', '') for s in _FIIS_UNIVERSAL]))),
+        }
+        for cat, symbols in categorized_symbols.items():
+            with st.expander(f"📦 {cat} ({len(symbols)})", expanded=False):
+                st.markdown(", ".join([f"`{s}`" for s in symbols]))
 
 # ===================== CONTROLE DE ESTADO =====================
 scanners_keys = ['df_fusion', 'df_hibrido', 'df_rr', 'df_pro', 'df_exp']
