@@ -1578,7 +1578,7 @@ def run_scanner(nome, funcao, key, descricao="", vol_ratio=1.6, adx_min=23, rsi_
         mostrar_resumo_triade(st.session_state[key])
         exibir_dataframe_colorido(st.session_state[key])
         if st.session_state[key] is not None and not st.session_state[key].empty:
-            adicionar_botao_copiar(st.session_state[key], label=key, vol_ratio=vol_ratio, adx_min=adx_min, rsi_min=rsi_min, rsi_max=rsi_max)
+            adicionar_botao_copiar(st.session_state[key], label=nome, vol_ratio=vol_ratio, adx_min=adx_min, rsi_min=rsi_min, rsi_max=rsi_max)
 
 
 # Scanner 0: 🔥 Swing Trade Fusion (HERO SCANNER)
@@ -1641,7 +1641,7 @@ with st.expander("🔥 Swing Trade Fusion — Best of Legacy + Evolved", expande
         )
 
         st.success(f"{len(df_sorted)} ativos encontrados")
-        adicionar_botao_copiar(df_sorted, label="fusion", vol_ratio=min_vol_ratio, adx_min=adx_min, rsi_min=rsi_min, rsi_max=rsi_max)
+        adicionar_botao_copiar(df_sorted, label="🔥 Swing Trade Fusion — Best of Legacy + Evolved", vol_ratio=min_vol_ratio, adx_min=adx_min, rsi_min=rsi_min, rsi_max=rsi_max)
     else:
         st.info("Nenhum ativo encontrado com os filtros atuais.")
 
@@ -1735,7 +1735,7 @@ with st.expander("🔮 Legacy - Profissional (Final Corrigida)", expanded=True):
         )
 
         st.success(f"{len(df_sorted)} ativos encontrados")
-        adicionar_botao_copiar(df_sorted, label="legacy_profissional", vol_ratio=min_vol_ratio, adx_min=adx_min, rsi_min=rsi_min, rsi_max=rsi_max, usa_sliders=False)
+        adicionar_botao_copiar(df_sorted, label="🔮 Legacy - Profissional (Final Corrigida)", vol_ratio=min_vol_ratio, adx_min=adx_min, rsi_min=rsi_min, rsi_max=rsi_max, usa_sliders=False)
     else:
         st.info("Nenhum ativo encontrado com os filtros da versão Profissional.")
 
@@ -1779,7 +1779,7 @@ with st.expander("⏰ Legacy - Intraday/Swing Curto Prazo", expanded=True):
         )
 
         st.success(f"{len(df_sorted)} ativos encontrados")
-        adicionar_botao_copiar(df_sorted, label="legacy_intraday", vol_ratio=min_vol_ratio, adx_min=adx_min, rsi_min=rsi_min, rsi_max=rsi_max, usa_sliders=False)
+        adicionar_botao_copiar(df_sorted, label="⏰ Legacy - Intraday/Swing Curto Prazo", vol_ratio=min_vol_ratio, adx_min=adx_min, rsi_min=rsi_min, rsi_max=rsi_max, usa_sliders=False)
     else:
         st.info("Nenhum ativo encontrado com os filtros da versão Intraday/Swing.")
 
@@ -1827,7 +1827,7 @@ with st.expander("🌐 Legacy - Expandida (Mid + Small Caps)", expanded=True):
         )
 
         st.success(f"{len(df_sorted)} ativos encontrados")
-        adicionar_botao_copiar(df_sorted, label="legacy_expandida", vol_ratio=min_vol_ratio, adx_min=adx_min, rsi_min=rsi_min, rsi_max=rsi_max, usa_sliders=False)
+        adicionar_botao_copiar(df_sorted, label="🌐 Legacy - Expandida (Mid + Small Caps)", vol_ratio=min_vol_ratio, adx_min=adx_min, rsi_min=rsi_min, rsi_max=rsi_max, usa_sliders=False)
     else:
         st.info("Nenhum ativo encontrado com os filtros da versão Expandida.")
 
