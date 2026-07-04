@@ -29,6 +29,20 @@ _ACOES_UNIVERSAL = (UNIV_BANCOS + UNIV_ENERGIA + UNIV_PETROLEO + UNIV_MINERACAO 
                     UNIV_VAREJO + UNIV_SAUDE + UNIV_IMOBILIARIO + UNIV_ALIMENTOS + 
                     UNIV_TRANSPORTES + UNIV_TECH + UNIV_INDUSTRIAL + UNIV_PAPEL + UNIV_EDUCACAO)
 
+# BDRs
+BDR_TECH = ['AAPL34.SA', 'MSFT34.SA', 'AMZO34.SA', 'GOGL34.SA', 'NVDC34.SA', 'TSLA34.SA', 'NFLX34.SA', 'ADBE34.SA', 'ORCL34.SA', 'CSCO34.SA', 'AVGO34.SA', 'QCOM34.SA', 'A1MD34.SA', 'PYPL34.SA', 'U1BE34.SA', 'S1PO34.SA']
+BDR_FINANCAS = ['JPMC34.SA', 'BOAC34.SA', 'GSGI34.SA', 'MSBR34.SA', 'BERK34.SA', 'VISA34.SA']
+BDR_CONSUMO = ['COCA34.SA', 'PEPB34.SA', 'MCDC34.SA', 'NIKE34.SA', 'SBUB34.SA', 'PGCO34.SA', 'WALM34.SA', 'HOME34.SA', 'DISB34.SA']
+BDR_SAUDE = ['JNJB34.SA', 'PFIZ34.SA', 'MRCK34.SA', 'ABBV34.SA', 'LILY34.SA']
+BDR_INDUSTRIAL = ['CATP34.SA', 'HONB34.SA', 'MMMC34.SA', 'EXXO34.SA', 'CHVX34.SA', 'DHER34.SA']
+_BDRS_UNIVERSAL = BDR_TECH + BDR_FINANCAS + BDR_CONSUMO + BDR_SAUDE + BDR_INDUSTRIAL
+
+# ETFs e FIIs
+_ETFS_UNIVERSAL = ['BOVA11.SA', 'BOVV11.SA', 'SMAL11.SA', 'XBOV11.SA', 'DIVO11.SA', 'MATB11.SA', 'FIND11.SA', 'GOVE11.SA', 'PIBB11.SA', 'IVVB11.SA', 'SPXI11.SA', 'NASD11.SA', 'HASH11.SA', 'QBTC11.SA', 'ETHE11.SA', 'GOLD11.SA', 'TECK11.SA', 'JURO11.SA', 'IMAB11.SA', 'IRFM11.SA', 'B5P211.SA', 'FIXA11.SA']
+_FIIS_UNIVERSAL = ['HGLG11.SA', 'BTLG11.SA', 'XPLG11.SA', 'VILG11.SA', 'BRCO11.SA', 'XPML11.SA', 'VISC11.SA', 'HSML11.SA', 'KNRI11.SA', 'PVBI11.SA', 'JSRE11.SA', 'BRCR11.SA', 'RCRB11.SA', 'MXRF11.SA', 'CPTS11.SA', 'IRDM11.SA', 'RBRR11.SA', 'RECR11.SA', 'VGIP11.SA', 'KNCR11.SA', 'HGCR11.SA', 'HGBS11.SA', 'ALZR11.SA', 'TRXF11.SA', 'TGAR11.SA', 'RBRF11.SA']
+
+ATIVOS_B3_AMPLIADO = list(set(_ACOES_UNIVERSAL + _BDRS_UNIVERSAL + _ETFS_UNIVERSAL + _FIIS_UNIVERSAL))
+
 # Configs de interface Streamlit
 st.set_page_config(page_title="Scanner de Abertura", layout="wide", page_icon="🌅")
 st.title("🌅 SCANNER DE ABERTURA - ESTABILIZAÇÃO (15M)")
@@ -192,9 +206,9 @@ st.sidebar.markdown("---")
 st.sidebar.info("Recomendado executar às 10:30 ou 10:45.")
 
 # Botão para rodar
-if st.button("🚀 Rodar Scanner de Abertura (Ações)", type="primary"):
-    with st.spinner("Analisando confirmações de swing trade..."):
-        df_resultados = processar_ativos(_ACOES_UNIVERSAL, min_vol, min_ratio, max_ratio, min_rvol)
+if st.button("🚀 Rodar Scanner de Abertura (Todos os Ativos)", type="primary"):
+    with st.spinner(f"Analisando confirmações de swing trade em {len(ATIVOS_B3_AMPLIADO)} ativos..."):
+        df_resultados = processar_ativos(ATIVOS_B3_AMPLIADO, min_vol, min_ratio, max_ratio, min_rvol)
         
         if not df_resultados.empty:
             # Ordena pelos que tem maior RVOL (maior confirmação institucional)
