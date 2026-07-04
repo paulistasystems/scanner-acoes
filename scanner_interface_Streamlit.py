@@ -24,26 +24,38 @@ PROFILES = {
         "adx_min": 20,
         "rsi_min": 45,
         "rsi_max": 65,
-        "vol_ratio": 1.3,
-        "desc": "Menos setups, maior qualidade. Tendência clara + RSI saudável + volume confirmado."
+        "vol_ratio": 1.5,
+        "vol_medio_min": 1_000_000,
+        "desc": "Menos setups, maior qualidade. Volume forte (1.5x) + liquidez mínima 1M + tendência clara."
     },
     "⚖️ Moderado": {
         "adx_min": 15,
         "rsi_min": 40,
         "rsi_max": 70,
-        "vol_ratio": 1.0,
-        "desc": "Equilíbrio entre quantidade e qualidade. Aceita momentum mais amplo."
+        "vol_ratio": 1.2,
+        "vol_medio_min": 500_000,
+        "desc": "Equilíbrio entre quantidade e qualidade. Volume moderado (1.2x) + liquidez mínima 500K."
     },
     "🔥 Agressivo": {
         "adx_min": 15,
         "rsi_min": 40,
         "rsi_max": 80,
-        "vol_ratio": 1.0,
-        "desc": "Máximo de oportunidades. Aceita tendências fracas e RSI estendido."
+        "vol_ratio": 0.8,
+        "vol_medio_min": 300_000,
+        "desc": "Máximo de oportunidades. Volume permissivo (0.8x) + liquidez mínima 300K."
     },
 }
 DEFAULT_PROFILE = "🛡️ Conservador"
 ADX_RISING_PERIODS = 5
+
+# Chaves de cache dos resultados dos scanners em st.session_state.
+# Definido no escopo do módulo (e não dentro do corpo do script) para estar
+# sempre disponível no callback on_change do radio de perfil, que executa
+# ANTES do corpo do script a cada rerun.
+SCANNER_CACHE_KEYS = [
+    'df_fusion', 'df_hibrido', 'df_rr', 'df_pro', 'df_exp',
+    'df_legacy_prof', 'df_legacy_intra', 'df_legacy_exp',
+]
 
 # ===================== LISTAS POR CATEGORIA (BUSCA UNIVERSAL) =====================
 
@@ -759,7 +771,7 @@ def legacy_expandida(ativos):
 
 # ===================== EVOLVED SCANNERS =====================
 
-def scanner_swing_hibrido(ativos, adx_min, rsi_min, rsi_max, vol_ratio_min):
+def scanner_swing_hibrido(ativos, adx_min, rsi_min, rsi_max, vol_ratio_min, vol_medio_min=300_000):
     """
     Scanner Swing Híbrido (Daily + 1H)
     - Análise Daily com thresholds dos sliders
@@ -786,6 +798,8 @@ def scanner_swing_hibrido(ativos, adx_min, rsi_min, rsi_max, vol_ratio_min):
                 continue
             if analise['vol_ratio'] < vol_ratio_min:
                 continue
+            if analise['vol_medio'] < vol_medio_min:
+                continue
             if not analise['adx_rising']:
                 continue
 
@@ -811,7 +825,7 @@ def scanner_swing_hibrido(ativos, adx_min, rsi_min, rsi_max, vol_ratio_min):
     return pd.DataFrame(resultados)
 
 
-def scanner_swing_rr(ativos, adx_min, rsi_min, rsi_max, vol_ratio_min):
+def scanner_swing_rr(ativos, adx_min, rsi_min, rsi_max, vol_ratio_min, vol_medio_min=300_000):
     """
     Scanner Swing RR (Daily + ATR targets)
     - Mesma base do Híbrido
@@ -838,6 +852,8 @@ def scanner_swing_rr(ativos, adx_min, rsi_min, rsi_max, vol_ratio_min):
             if not (rsi_min <= analise['rsi'] <= rsi_max):
                 continue
             if analise['vol_ratio'] < vol_ratio_min:
+                continue
+            if analise['vol_medio'] < vol_medio_min:
                 continue
             if not analise['adx_rising']:
                 continue
@@ -873,7 +889,7 @@ def scanner_swing_rr(ativos, adx_min, rsi_min, rsi_max, vol_ratio_min):
     return pd.DataFrame(resultados)
 
 
-def scanner_swing_profissional(ativos, adx_min, rsi_min, rsi_max, vol_ratio_min):
+def scanner_swing_profissional(ativos, adx_min, rsi_min, rsi_max, vol_ratio_min, vol_medio_min=300_000):
     """
     Scanner Swing Profissional (Daily + 1H + 30M)
     - Análise multi-timeframe completa
@@ -901,6 +917,8 @@ def scanner_swing_profissional(ativos, adx_min, rsi_min, rsi_max, vol_ratio_min)
             if not (rsi_min <= analise['rsi'] <= rsi_max):
                 continue
             if analise['vol_ratio'] < vol_ratio_min:
+                continue
+            if analise['vol_medio'] < vol_medio_min:
                 continue
 
             # ADX Rising obrigatório
@@ -943,11 +961,11 @@ def scanner_swing_profissional(ativos, adx_min, rsi_min, rsi_max, vol_ratio_min)
     return pd.DataFrame(resultados)
 
 
-def scanner_swing_expandido(adx_min, rsi_min, rsi_max, vol_ratio_min, ativos=None):
+def scanner_swing_expandido(adx_min, rsi_min, rsi_max, vol_ratio_min, vol_medio_min=300_000, ativos=None):
     """
     Scanner Swing Expandido (Mid + Small Caps)
     - Usa lista universal por padrão (ou lista fornecida)
-    - Volume threshold levemente relaxado (vol_medio mínimo menor)
+    - Volume médio mínimo controlado pelo perfil (vol_medio_min)
     - Tríade completa
     """
     resultados = []
@@ -977,8 +995,8 @@ def scanner_swing_expandido(adx_min, rsi_min, rsi_max, vol_ratio_min, ativos=Non
             if not analise['adx_rising']:
                 continue
 
-            # Vol medio relaxado para small caps (2.5M vs 8M do padrão)
-            if analise['vol_medio'] < 2_500_000:
+            # Vol medio mínimo controlado pelo perfil
+            if analise['vol_medio'] < vol_medio_min:
                 continue
 
             resultados.append({
@@ -1000,7 +1018,7 @@ def scanner_swing_expandido(adx_min, rsi_min, rsi_max, vol_ratio_min, ativos=Non
 
 
 
-def scanner_swing_trade_fusion(ativos, adx_min, rsi_min, rsi_max, vol_ratio_min):
+def scanner_swing_trade_fusion(ativos, adx_min, rsi_min, rsi_max, vol_ratio_min, vol_medio_min=300_000):
     """
     🔥 Swing Trade Fusion Scanner
     Combines Legacy's granular multi-timeframe analysis (RSI/ADX/MACD per D/1H/30M,
@@ -1056,7 +1074,7 @@ def scanner_swing_trade_fusion(ativos, adx_min, rsi_min, rsi_max, vol_ratio_min)
                 continue
             if vol_ratio_d < vol_ratio_min:
                 continue
-            if vol_medio_d < 5_000_000:
+            if vol_medio_d < vol_medio_min:
                 continue
 
             # ---- DAILY SCORE (max 100) ----
@@ -1220,24 +1238,35 @@ def scanner_swing_trade_fusion(ativos, adx_min, rsi_min, rsi_max, vol_ratio_min)
 st.markdown("---")
 st.subheader("⚙️ Painel de Controle Global")
 
-# Radio fora do form para atualização imediata da legenda
+# Radio fora do form para atualização imediata da legenda.
+def _limpar_caches_ao_trocar_perfil():
+    """Invalida os caches dos scanners ao trocar de perfil, para que os
+    resultados sejam recalculados imediatamente com os novos filtros —
+    mantém a legenda e os dados sempre em sincronia."""
+    for key in SCANNER_CACHE_KEYS:
+        st.session_state[key] = None
+
+
 profile_names = list(PROFILES.keys()) + ["🎛️ Personalizado"]
 perfil_selecionado = st.radio(
     "🎯 Perfil de Análise",
     profile_names,
     index=profile_names.index(DEFAULT_PROFILE),
     horizontal=True,
-    help="Selecione um perfil predefinido ou Personalizado para ajustar manualmente"
+    help="Selecione um perfil predefinido ou Personalizado para ajustar manualmente",
+    on_change=_limpar_caches_ao_trocar_perfil,
 )
 
 # Mostrar legenda do perfil selecionado fora do form (atualiza imediatamente)
 if perfil_selecionado in PROFILES:
     p = PROFILES[perfil_selecionado]
     st.info(f"**{perfil_selecionado}** — {p['desc']}  \n"
-            f"📊 Vol ≥ {p['vol_ratio']}x | 📈 ADX ≥ {p['adx_min']} | "
+            f"📊 Vol ≥ {p['vol_ratio']}x | 💧 Liquidez ≥ {p['vol_medio_min']/1_000_000:.1f}M | "
+            f"📈 ADX ≥ {p['adx_min']} | "
             f"⬇️ RSI ≥ {p['rsi_min']} | ⬆️ RSI ≤ {p['rsi_max']}")
     # Set values for use in form
     min_vol_ratio = p["vol_ratio"]
+    vol_medio_min = p["vol_medio_min"]
     adx_min = p["adx_min"]
     rsi_min = p["rsi_min"]
     rsi_max = p["rsi_max"]
@@ -1247,16 +1276,25 @@ if perfil_selecionado in PROFILES:
 with st.form("painel_controle"):
     if perfil_selecionado == "🎛️ Personalizado":
         # Personalizado: mostrar sliders
-        col_vol, col_adx, col_rsi_min, col_rsi_max = st.columns(4)
+        col_vol, col_liq, col_adx, col_rsi_min, col_rsi_max = st.columns(5)
         with col_vol:
             min_vol_ratio = st.slider(
                 "📊 Volume Ratio Mínimo",
-                min_value=1.0,
+                min_value=0.5,
                 max_value=3.0,
                 value=PROFILES[DEFAULT_PROFILE]["vol_ratio"],
                 step=0.1,
                 help="Ratio mínimo entre volume atual e média de 20 períodos"
             )
+        with col_liq:
+            vol_medio_min = st.slider(
+                "💧 Liquidez Mínima (M)",
+                min_value=0.1,
+                max_value=10.0,
+                value=PROFILES[DEFAULT_PROFILE]["vol_medio_min"] / 1_000_000,
+                step=0.1,
+                help="Volume médio diário mínimo (em milhões). Guarda de liquidez."
+            ) * 1_000_000
         with col_adx:
             adx_min = st.slider(
                 "📈 ADX Mínimo",
@@ -1346,16 +1384,13 @@ with st.expander(f"📋 Ativos em uso — {len(ativos_global)} ativos", expanded
                 st.markdown(", ".join([f"`{s}`" for s in symbols]))
 
 # ===================== CONTROLE DE ESTADO =====================
-scanners_keys = ['df_fusion', 'df_hibrido', 'df_rr', 'df_pro', 'df_exp']
-legacy_keys = ['df_legacy_prof', 'df_legacy_intra', 'df_legacy_exp']
-
-for key in scanners_keys + legacy_keys:
+for key in SCANNER_CACHE_KEYS:
     if key not in st.session_state:
         st.session_state[key] = None
 
 # Quando o form é submetido, limpar cache dos scanners E cache de dados para forçar recálculo
 if rodar_todos:
-    for key in scanners_keys + legacy_keys:
+    for key in SCANNER_CACHE_KEYS:
         st.session_state[key] = None
     # Limpar cache do yfinance para baixar dados frescos
     baixar_dados.clear()
@@ -1608,7 +1643,7 @@ with st.expander("🔥 Swing Trade Fusion — Best of Legacy + Evolved", expande
 
     if rodar_todos or st.session_state['df_fusion'] is None:
         with st.spinner("Analisando Swing Trade Fusion..."):
-            st.session_state['df_fusion'] = scanner_swing_trade_fusion(ativos_global, adx_min, rsi_min, rsi_max, min_vol_ratio)
+            st.session_state['df_fusion'] = scanner_swing_trade_fusion(ativos_global, adx_min, rsi_min, rsi_max, min_vol_ratio, vol_medio_min)
 
     df_fusion = st.session_state['df_fusion']
     if df_fusion is not None and not df_fusion.empty:
@@ -1669,7 +1704,7 @@ with st.expander("🔥 Swing Trade Fusion — Best of Legacy + Evolved", expande
 # Scanner 1: Swing Híbrido
 run_scanner(
     "🔀 Scanner Swing Híbrido (Daily + 1H)",
-    lambda: scanner_swing_hibrido(ativos_global, adx_min, rsi_min, rsi_max, min_vol_ratio),
+    lambda: scanner_swing_hibrido(ativos_global, adx_min, rsi_min, rsi_max, min_vol_ratio, vol_medio_min),
     'df_hibrido',
     descricao="Análise Daily com confirmação 1H. Tríade básica.",
     vol_ratio=min_vol_ratio, adx_min=adx_min, rsi_min=rsi_min, rsi_max=rsi_max, perfil=perfil_selecionado
@@ -1678,7 +1713,7 @@ run_scanner(
 # Scanner 2: Swing RR
 run_scanner(
     "🎯 Scanner Swing RR (Daily + ATR Targets)",
-    lambda: scanner_swing_rr(ativos_global, adx_min, rsi_min, rsi_max, min_vol_ratio),
+    lambda: scanner_swing_rr(ativos_global, adx_min, rsi_min, rsi_max, min_vol_ratio, vol_medio_min),
     'df_rr',
     descricao="Base Híbrido + Stop (ATR×1.8), Alvos 1:2 e 1:3.",
     vol_ratio=min_vol_ratio, adx_min=adx_min, rsi_min=rsi_min, rsi_max=rsi_max, perfil=perfil_selecionado
@@ -1687,7 +1722,7 @@ run_scanner(
 # Scanner 3: Swing Profissional
 run_scanner(
     "🏆 Scanner Swing Profissional (Daily + 1H + 30M)",
-    lambda: scanner_swing_profissional(ativos_global, adx_min, rsi_min, rsi_max, min_vol_ratio),
+    lambda: scanner_swing_profissional(ativos_global, adx_min, rsi_min, rsi_max, min_vol_ratio, vol_medio_min),
     'df_pro',
     descricao="Multi-timeframe completo. ADX Rising + DI+ > DI- + Tríade obrigatórios.",
     vol_ratio=min_vol_ratio, adx_min=adx_min, rsi_min=rsi_min, rsi_max=rsi_max, perfil=perfil_selecionado
@@ -1696,9 +1731,9 @@ run_scanner(
 # Scanner 4: Swing Expandido
 run_scanner(
     "🌐 Scanner Swing Expandido (Mid + Small Caps)",
-    lambda: scanner_swing_expandido(adx_min, rsi_min, rsi_max, min_vol_ratio),
+    lambda: scanner_swing_expandido(adx_min, rsi_min, rsi_max, min_vol_ratio, vol_medio_min),
     'df_exp',
-    descricao="Lista completa (Blue Chips + Mid/Small). Volume médio mínimo relaxado (2.5M).",
+    descricao="Lista completa (Blue Chips + Mid/Small). Volume médio mínimo controlado pelo perfil.",
     vol_ratio=min_vol_ratio, adx_min=adx_min, rsi_min=rsi_min, rsi_max=rsi_max, perfil=perfil_selecionado
 )
 
