@@ -18,11 +18,31 @@ from datetime import datetime
 st.set_page_config(page_title="Scanner Ações BR", layout="wide", page_icon="📈")
 st.title("📈 SCANNER CONSOLIDADO DE AÇÕES - BRASIL")
 
-# ===================== THRESHOLDS PADRÃO =====================
-DEFAULT_ADX_MIN = 15
-DEFAULT_RSI_MIN = 40
-DEFAULT_RSI_MAX = 80
-DEFAULT_VOL_RATIO = 1.0
+# ===================== PERFIS DE ANÁLISE =====================
+PROFILES = {
+    "🛡️ Conservador": {
+        "adx_min": 20,
+        "rsi_min": 45,
+        "rsi_max": 65,
+        "vol_ratio": 1.3,
+        "desc": "Menos setups, maior qualidade. Tendência clara + RSI saudável + volume confirmado."
+    },
+    "⚖️ Moderado": {
+        "adx_min": 15,
+        "rsi_min": 40,
+        "rsi_max": 70,
+        "vol_ratio": 1.0,
+        "desc": "Equilíbrio entre quantidade e qualidade. Aceita momentum mais amplo."
+    },
+    "🔥 Agressivo": {
+        "adx_min": 15,
+        "rsi_min": 40,
+        "rsi_max": 80,
+        "vol_ratio": 1.0,
+        "desc": "Máximo de oportunidades. Aceita tendências fracas e RSI estendido."
+    },
+}
+DEFAULT_PROFILE = "🛡️ Conservador"
 ADX_RISING_PERIODS = 5
 
 # ===================== LISTAS POR CATEGORIA (BUSCA UNIVERSAL) =====================
@@ -1200,51 +1220,67 @@ def scanner_swing_trade_fusion(ativos, adx_min, rsi_min, rsi_max, vol_ratio_min)
 st.markdown("---")
 st.subheader("⚙️ Painel de Controle Global")
 
-# Usar st.form para que os sliders NÃO disparem rerun automático.
+# Usar st.form para que a seleção NÃO dispare rerun automático.
 # Só o botão de submit (Atualizar Scanners) dispara o rerun.
 with st.form("painel_controle"):
-    # Row 1: Volume + ADX + RSI Min + RSI Max sliders
-    col_vol, col_adx, col_rsi_min, col_rsi_max = st.columns(4)
+    # Row 1: Perfil de Análise
+    profile_names = list(PROFILES.keys()) + ["🎛️ Personalizado"]
+    perfil_selecionado = st.radio(
+        "🎯 Perfil de Análise",
+        profile_names,
+        index=profile_names.index(DEFAULT_PROFILE),
+        horizontal=True,
+        help="Selecione um perfil predefinido ou Personalizado para ajustar manualmente"
+    )
 
-    with col_vol:
-        min_vol_ratio = st.slider(
-            "📊 Volume Ratio Mínimo",
-            min_value=1.0,
-            max_value=3.0,
-            value=DEFAULT_VOL_RATIO,
-            step=0.1,
-            help="Ratio mínimo entre volume atual e média de 20 períodos"
-        )
-
-    with col_adx:
-        adx_min = st.slider(
-            "📈 ADX Mínimo",
-            min_value=15,
-            max_value=35,
-            value=DEFAULT_ADX_MIN,
-            step=1,
-            help="Força mínima da tendência (ADX). Valores > 25 indicam tendência forte"
-        )
-
-    with col_rsi_min:
-        rsi_min = st.slider(
-            "⬇️ RSI Mínimo",
-            min_value=40,
-            max_value=60,
-            value=DEFAULT_RSI_MIN,
-            step=1,
-            help="RSI mínimo para considerar momentum de alta"
-        )
-
-    with col_rsi_max:
-        rsi_max = st.slider(
-            "⬆️ RSI Máximo",
-            min_value=60,
-            max_value=80,
-            value=DEFAULT_RSI_MAX,
-            step=1,
-            help="RSI máximo antes de sobrecompra"
-        )
+    if perfil_selecionado in PROFILES:
+        p = PROFILES[perfil_selecionado]
+        min_vol_ratio = p["vol_ratio"]
+        adx_min = p["adx_min"]
+        rsi_min = p["rsi_min"]
+        rsi_max = p["rsi_max"]
+        st.info(f"**{perfil_selecionado}** — {p['desc']}  \n"
+                f"📊 Vol ≥ {p['vol_ratio']}x | 📈 ADX ≥ {p['adx_min']} | "
+                f"⬇️ RSI ≥ {p['rsi_min']} | ⬆️ RSI ≤ {p['rsi_max']}")
+    else:
+        # Personalizado: mostrar sliders
+        col_vol, col_adx, col_rsi_min, col_rsi_max = st.columns(4)
+        with col_vol:
+            min_vol_ratio = st.slider(
+                "📊 Volume Ratio Mínimo",
+                min_value=1.0,
+                max_value=3.0,
+                value=PROFILES[DEFAULT_PROFILE]["vol_ratio"],
+                step=0.1,
+                help="Ratio mínimo entre volume atual e média de 20 períodos"
+            )
+        with col_adx:
+            adx_min = st.slider(
+                "📈 ADX Mínimo",
+                min_value=15,
+                max_value=35,
+                value=PROFILES[DEFAULT_PROFILE]["adx_min"],
+                step=1,
+                help="Força mínima da tendência (ADX). Valores > 25 indicam tendência forte"
+            )
+        with col_rsi_min:
+            rsi_min = st.slider(
+                "⬇️ RSI Mínimo",
+                min_value=40,
+                max_value=60,
+                value=PROFILES[DEFAULT_PROFILE]["rsi_min"],
+                step=1,
+                help="RSI mínimo para considerar momentum de alta"
+            )
+        with col_rsi_max:
+            rsi_max = st.slider(
+                "⬆️ RSI Máximo",
+                min_value=60,
+                max_value=80,
+                value=PROFILES[DEFAULT_PROFILE]["rsi_max"],
+                step=1,
+                help="RSI máximo antes de sobrecompra"
+            )
 
     # Botão de submit do form — único gatilho de rerun
     rodar_todos = st.form_submit_button("🔄 Atualizar Scanners", type="primary", width='stretch')
@@ -1402,7 +1438,7 @@ def formatar_dataframe_para_texto(df):
     return "\n".join(linhas)
 
 
-def adicionar_botao_copiar(df, label="resultado", vol_ratio=1.6, adx_min=23, rsi_min=52, rsi_max=70, usa_sliders=True):
+def adicionar_botao_copiar(df, label="resultado", vol_ratio=1.6, adx_min=23, rsi_min=52, rsi_max=70, usa_sliders=True, perfil=""):
     """Adiciona o botão para copiar a análise com o prompt do trader."""
     if df is None or df.empty:
         return
@@ -1454,12 +1490,13 @@ Seja objetivo, direto e conservador. Se não houver setups bons, diga claramente
     # Converter DataFrame para formato textual linear
     dados_textuais = formatar_dataframe_para_texto(df)
 
-    # Configuração dos sliders usados na análise
+    # Configuração dos filtros usados na análise
+    perfil_info = f"\n**Perfil:** {perfil}" if perfil else ""
     if usa_sliders:
         config_sliders = f"""
 
 ---
-**Scanner:** {label}
+**Scanner:** {label}{perfil_info}
 
 **Configuração dos Filtros Utilizados:**
 • Volume Ratio Mínimo: {vol_ratio}
@@ -1539,7 +1576,7 @@ Seja objetivo, direto e conservador. Se não houver setups bons, diga claramente
 
 # ===================== EXECUÇÃO DOS SCANNERS =====================
 
-def run_scanner(nome, funcao, key, descricao="", vol_ratio=1.6, adx_min=23, rsi_min=52, rsi_max=70):
+def run_scanner(nome, funcao, key, descricao="", vol_ratio=1.6, adx_min=23, rsi_min=52, rsi_max=70, perfil=""):
     """Executa e exibe um scanner dentro de um expander."""
     with st.expander(nome, expanded=True):
         if descricao:
@@ -1552,7 +1589,7 @@ def run_scanner(nome, funcao, key, descricao="", vol_ratio=1.6, adx_min=23, rsi_
         mostrar_resumo_triade(st.session_state[key])
         exibir_dataframe_colorido(st.session_state[key])
         if st.session_state[key] is not None and not st.session_state[key].empty:
-            adicionar_botao_copiar(st.session_state[key], label=nome, vol_ratio=vol_ratio, adx_min=adx_min, rsi_min=rsi_min, rsi_max=rsi_max)
+            adicionar_botao_copiar(st.session_state[key], label=nome, vol_ratio=vol_ratio, adx_min=adx_min, rsi_min=rsi_min, rsi_max=rsi_max, perfil=perfil)
 
 
 # Scanner 0: 🔥 Swing Trade Fusion (HERO SCANNER)
@@ -1615,7 +1652,7 @@ with st.expander("🔥 Swing Trade Fusion — Best of Legacy + Evolved", expande
         )
 
         st.success(f"{len(df_sorted)} ativos encontrados")
-        adicionar_botao_copiar(df_sorted, label="🔥 Swing Trade Fusion — Best of Legacy + Evolved", vol_ratio=min_vol_ratio, adx_min=adx_min, rsi_min=rsi_min, rsi_max=rsi_max)
+        adicionar_botao_copiar(df_sorted, label="🔥 Swing Trade Fusion — Best of Legacy + Evolved", vol_ratio=min_vol_ratio, adx_min=adx_min, rsi_min=rsi_min, rsi_max=rsi_max, perfil=perfil_selecionado)
     else:
         st.info("Nenhum ativo encontrado com os filtros atuais.")
 
@@ -1625,7 +1662,7 @@ run_scanner(
     lambda: scanner_swing_hibrido(ativos_global, adx_min, rsi_min, rsi_max, min_vol_ratio),
     'df_hibrido',
     descricao="Análise Daily com confirmação 1H. Tríade básica.",
-    vol_ratio=min_vol_ratio, adx_min=adx_min, rsi_min=rsi_min, rsi_max=rsi_max
+    vol_ratio=min_vol_ratio, adx_min=adx_min, rsi_min=rsi_min, rsi_max=rsi_max, perfil=perfil_selecionado
 )
 
 # Scanner 2: Swing RR
@@ -1634,7 +1671,7 @@ run_scanner(
     lambda: scanner_swing_rr(ativos_global, adx_min, rsi_min, rsi_max, min_vol_ratio),
     'df_rr',
     descricao="Base Híbrido + Stop (ATR×1.8), Alvos 1:2 e 1:3.",
-    vol_ratio=min_vol_ratio, adx_min=adx_min, rsi_min=rsi_min, rsi_max=rsi_max
+    vol_ratio=min_vol_ratio, adx_min=adx_min, rsi_min=rsi_min, rsi_max=rsi_max, perfil=perfil_selecionado
 )
 
 # Scanner 3: Swing Profissional
@@ -1643,7 +1680,7 @@ run_scanner(
     lambda: scanner_swing_profissional(ativos_global, adx_min, rsi_min, rsi_max, min_vol_ratio),
     'df_pro',
     descricao="Multi-timeframe completo. ADX Rising + DI+ > DI- + Tríade obrigatórios.",
-    vol_ratio=min_vol_ratio, adx_min=adx_min, rsi_min=rsi_min, rsi_max=rsi_max
+    vol_ratio=min_vol_ratio, adx_min=adx_min, rsi_min=rsi_min, rsi_max=rsi_max, perfil=perfil_selecionado
 )
 
 # Scanner 4: Swing Expandido
@@ -1652,7 +1689,7 @@ run_scanner(
     lambda: scanner_swing_expandido(adx_min, rsi_min, rsi_max, min_vol_ratio),
     'df_exp',
     descricao="Lista completa (Blue Chips + Mid/Small). Volume médio mínimo relaxado (2.5M).",
-    vol_ratio=min_vol_ratio, adx_min=adx_min, rsi_min=rsi_min, rsi_max=rsi_max
+    vol_ratio=min_vol_ratio, adx_min=adx_min, rsi_min=rsi_min, rsi_max=rsi_max, perfil=perfil_selecionado
 )
 
 # Feedback visual após atualização

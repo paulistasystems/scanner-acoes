@@ -223,6 +223,38 @@ Estes scanners usam os parâmetros dos sliders do Painel de Controle:
 
 ---
 
+## 🔥 Swing Trade Fusion (Recomendado)
+
+Scanner híbrido que combina o melhor dos Legacy (análise granular multi-TF) com o melhor dos Evolved (Tríade, DI, ADX Rising, Stop/Alvos, sliders).
+
+| Aspecto | Detalhe |
+|---------|---------|
+| **Timeframes** | Daily + 1H (principal) + 30M (timing) |
+| **Score** | Ponderado: `Daily×0.30 + 1H×0.40 + 30M×0.30` (normalizado 0–100) |
+| **Confluência** | 4 níveis: Fraca ❌ → Parcial ⚠️ → Boa ✅ → Excelente ✅✅ |
+| **Tríade** | ADX + RSI + Volume checados por TF (Daily e 1H) |
+| **Direção** | +DI / -DI no Daily |
+| **ADX Rising** | Verificado no Daily e 1H |
+| **Risco** | Stop (ATR×1.8), Alvos 1:2 e 1:3 |
+| **Sinais de Saída** | ADX↓D, ADX↓1H, RSI↑D, RSI↑1H |
+| **Filtros** | Preço > EMA20/50, ADX ≥ slider, RSI na faixa, Vol ≥ slider, Liquidez ≥ 5M |
+| **Uso ideal** | Scanner principal para swing trade de 1–3 dias |
+
+### Score por Timeframe (max 100 para D/1H, max 70 para 30M)
+
+| Critério | Pontos | Timeframes |
+|----------|--------|------------|
+| Preço > EMA9 | +15 | D, 1H, 30M |
+| Preço > EMA20 | +15 | D, 1H, 30M |
+| Preço > EMA50 | +10 | D, 1H, 30M |
+| MACD > 0 | +15 | D, 1H, 30M |
+| ADX ≥ threshold | +15 | D, 1H, 30M |
+| RSI na zona ideal | +15 | D, 1H |
+| ADX Rising | +10 | D, 1H |
+| +DI > -DI | +5 | D, 1H |
+
+---
+
 ## 📚 Scanners Legacy
 
 Scanners das versões anteriores mantidos para comparação. Têm **filtros fixos** (não usam os sliders):
