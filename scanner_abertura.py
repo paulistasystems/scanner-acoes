@@ -132,9 +132,27 @@ def processar_ativos(ativos, min_vol_fin, min_ratio, max_ratio, min_rvol):
                 # Variação do dia (do fechamento do C1 pro Atual, pra saber se andou)
                 var_percentual = ((close_atual - c1['Close']) / c1['Close']) * 100
                 
+                # Cálculo da VWAP Intraday do dia atual
+                df_hoje_calc = df_hoje.copy()
+                df_hoje_calc['Typical_Price'] = (df_hoje_calc['High'] + df_hoje_calc['Low'] + df_hoje_calc['Close']) / 3
+                df_hoje_calc['Vol_x_TP'] = df_hoje_calc['Typical_Price'] * df_hoje_calc['Volume']
+                vol_total_dia = df_hoje_calc['Volume'].sum()
+                vwap = df_hoje_calc['Vol_x_TP'].sum() / vol_total_dia if vol_total_dia > 0 else close_atual
+                
+                # Definir Setup sugerido (Proximidade das médias = Pullback, Longe = Rompimento)
+                # Consideramos "perto" se o preço estiver a menos de 0.5% da VWAP ou da EMA9
+                dist_vwap = abs(close_atual - vwap) / close_atual
+                dist_ema9 = abs(close_atual - ema9) / close_atual
+                
+                if dist_vwap <= 0.005 or dist_ema9 <= 0.005:
+                    setup = "🧲 Pullback (Média/VWAP)"
+                else:
+                    setup = "🚀 Rompimento (Máxima)"
+                
                 resultados.append({
                     'Ativo': symbol.replace('.SA', ''),
                     'Preço Atual': round(close_atual, 2),
+                    'Setup / Gatilho': setup,
                     'Tendência (15m)': tendencia,
                     'Volume Ratio (RVOL)': round(rvol, 2),
                     'Ratio Queda (10:15/10:00)': round(decay_ratio, 2),
