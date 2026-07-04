@@ -994,6 +994,222 @@ def scanner_swing_expandido(adx_min, rsi_min, rsi_max, vol_ratio_min, ativos=Non
 
 
 
+def scanner_swing_trade_fusion(ativos, adx_min, rsi_min, rsi_max, vol_ratio_min):
+    """
+    🔥 Swing Trade Fusion Scanner
+    Combines Legacy's granular multi-timeframe analysis (RSI/ADX/MACD per D/1H/30M,
+    per-TF scoring, 4-level confluence) with Evolved's advanced features (Tríade,
+    DI+/DI-, ADX Rising, ATR Stop/Targets, exit signals, slider control).
+
+    Weighted Score: Daily×0.30 + 1H×0.40 + 30M×0.30 (1H = main TF)
+    """
+    resultados = []
+    for symbol in ativos:
+        try:
+            # ===================== DAILY =====================
+            df_d = baixar_dados(symbol, '1d', '1y')
+            if len(df_d) < 120:
+                continue
+
+            last_d = df_d.iloc[-1]
+            preco = safe_float(last_d['Close'])
+
+            # Indicators
+            df_d['EMA9'] = ta.ema(df_d['Close'], length=9)
+            df_d['EMA20'] = ta.ema(df_d['Close'], length=20)
+            df_d['EMA50'] = ta.ema(df_d['Close'], length=50)
+            df_d['RSI'] = ta.rsi(df_d['Close'], length=14)
+            df_d['ATR'] = ta.atr(df_d['High'], df_d['Low'], df_d['Close'], length=14)
+
+            macd_d = ta.macd(df_d['Close'])
+            adx_d = ta.adx(df_d['High'], df_d['Low'], df_d['Close'], length=14)
+
+            vol20_d = df_d['Volume'].rolling(20).mean()
+            vol_ratio_d = safe_float(last_d['Volume']) / safe_float(vol20_d.iloc[-1]) if safe_float(vol20_d.iloc[-1]) > 0 else 0
+            vol_medio_d = safe_float(vol20_d.iloc[-1])
+
+            rsi_d = safe_float(df_d['RSI'].iloc[-1])
+            adx_d_val = safe_float(adx_d['ADX_14'].iloc[-1])
+            plus_di_d = safe_float(adx_d['DMP_14'].iloc[-1])
+            minus_di_d = safe_float(adx_d['DMN_14'].iloc[-1])
+            macd_d_val = safe_float(macd_d['MACD_12_26_9'].iloc[-1])
+            atr_d = safe_float(df_d['ATR'].iloc[-1])
+
+            # ADX Rising (Daily)
+            adx_d_past = safe_float(adx_d['ADX_14'].iloc[-ADX_RISING_PERIODS]) if len(adx_d) > ADX_RISING_PERIODS else adx_d_val
+            adx_rising_d = adx_d_val > adx_d_past
+
+            # ---- DAILY FILTERS ----
+            if preco <= safe_float(df_d['EMA20'].iloc[-1]):
+                continue
+            if preco <= safe_float(df_d['EMA50'].iloc[-1]):
+                continue
+            if adx_d_val < adx_min:
+                continue
+            if not (rsi_min <= rsi_d <= rsi_max):
+                continue
+            if vol_ratio_d < vol_ratio_min:
+                continue
+            if vol_medio_d < 5_000_000:
+                continue
+
+            # ---- DAILY SCORE (max 100) ----
+            score_d = 0
+            if preco > safe_float(df_d['EMA9'].iloc[-1]): score_d += 15
+            if preco > safe_float(df_d['EMA20'].iloc[-1]): score_d += 15
+            if preco > safe_float(df_d['EMA50'].iloc[-1]): score_d += 10
+            if macd_d_val > 0: score_d += 15
+            if adx_d_val >= adx_min: score_d += 15
+            if rsi_min <= rsi_d <= rsi_max: score_d += 15
+            if adx_rising_d: score_d += 10
+            if plus_di_d > minus_di_d: score_d += 5
+
+            # Tríade Daily
+            triade_d = (adx_d_val >= adx_min) and (rsi_min <= rsi_d <= rsi_max) and (vol_ratio_d >= vol_ratio_min)
+
+            # ===================== 1H (Main Timeframe) =====================
+            df_h = baixar_dados(symbol, '1h', '60d')
+            if len(df_h) < 50:
+                continue
+
+            last_h = df_h.iloc[-1]
+            close_h = safe_float(last_h['Close'])
+
+            df_h['EMA9'] = ta.ema(df_h['Close'], length=9)
+            df_h['EMA20'] = ta.ema(df_h['Close'], length=20)
+            df_h['EMA50'] = ta.ema(df_h['Close'], length=50)
+            df_h['RSI'] = ta.rsi(df_h['Close'], length=14)
+
+            macd_h = ta.macd(df_h['Close'])
+            adx_h = ta.adx(df_h['High'], df_h['Low'], df_h['Close'], length=14)
+
+            vol20_h = df_h['Volume'].rolling(20).mean()
+            vol_ratio_h = safe_float(last_h['Volume']) / safe_float(vol20_h.iloc[-1]) if safe_float(vol20_h.iloc[-1]) > 0 else 0
+
+            rsi_h = safe_float(df_h['RSI'].iloc[-1])
+            adx_h_val = safe_float(adx_h['ADX_14'].iloc[-1])
+            plus_di_h = safe_float(adx_h['DMP_14'].iloc[-1])
+            minus_di_h = safe_float(adx_h['DMN_14'].iloc[-1])
+            macd_h_val = safe_float(macd_h['MACD_12_26_9'].iloc[-1])
+
+            # ADX Rising (1H)
+            adx_h_past = safe_float(adx_h['ADX_14'].iloc[-ADX_RISING_PERIODS]) if len(adx_h) > ADX_RISING_PERIODS else adx_h_val
+            adx_rising_h = adx_h_val > adx_h_past
+
+            # ---- 1H SCORE (max 100) ----
+            score_h = 0
+            if close_h > safe_float(df_h['EMA9'].iloc[-1]): score_h += 15
+            if close_h > safe_float(df_h['EMA20'].iloc[-1]): score_h += 15
+            if close_h > safe_float(df_h['EMA50'].iloc[-1]): score_h += 10
+            if macd_h_val > 0: score_h += 15
+            if adx_h_val >= adx_min: score_h += 15
+            if rsi_min <= rsi_h <= rsi_max: score_h += 15
+            if adx_rising_h: score_h += 10
+            if plus_di_h > minus_di_h: score_h += 5
+
+            # Tríade 1H
+            triade_h = (adx_h_val >= adx_min) and (rsi_min <= rsi_h <= rsi_max) and (vol_ratio_h >= vol_ratio_min)
+
+            # ===================== 30M (Timing Timeframe) =====================
+            df_30 = baixar_dados(symbol, '30m', '30d')
+            if len(df_30) < 50:
+                continue
+
+            last_30 = df_30.iloc[-1]
+            close_30 = safe_float(last_30['Close'])
+
+            df_30['EMA9'] = ta.ema(df_30['Close'], length=9)
+            df_30['EMA20'] = ta.ema(df_30['Close'], length=20)
+            df_30['EMA50'] = ta.ema(df_30['Close'], length=50)
+            df_30['RSI'] = ta.rsi(df_30['Close'], length=14)
+
+            macd_30 = ta.macd(df_30['Close'])
+            adx_30 = ta.adx(df_30['High'], df_30['Low'], df_30['Close'], length=14)
+
+            rsi_30 = safe_float(df_30['RSI'].iloc[-1])
+            adx_30_val = safe_float(adx_30['ADX_14'].iloc[-1])
+            macd_30_val = safe_float(macd_30['MACD_12_26_9'].iloc[-1])
+
+            # ---- 30M SCORE (max 70) ----
+            score_30 = 0
+            if close_30 > safe_float(df_30['EMA9'].iloc[-1]): score_30 += 15
+            if close_30 > safe_float(df_30['EMA20'].iloc[-1]): score_30 += 15
+            if close_30 > safe_float(df_30['EMA50'].iloc[-1]): score_30 += 10
+            if macd_30_val > 0: score_30 += 15
+            if adx_30_val >= adx_min: score_30 += 15
+
+            # ===================== CONFLUENCE (4-level) =====================
+            # Check per-TF alignment (price > EMA20, ADX > threshold, RSI in zone, MACD > 0)
+            def tf_aligned(price, ema20, adx_val, rsi_val, macd_val):
+                return price > ema20 and adx_val > 20 and rsi_min <= rsi_val <= rsi_max and macd_val > 0
+
+            aligned_h = tf_aligned(close_h, safe_float(df_h['EMA20'].iloc[-1]), adx_h_val, rsi_h, macd_h_val)
+            aligned_30 = tf_aligned(close_30, safe_float(df_30['EMA20'].iloc[-1]), adx_30_val, rsi_30, macd_30_val)
+            aligned_d = tf_aligned(preco, safe_float(df_d['EMA20'].iloc[-1]), adx_d_val, rsi_d, macd_d_val)
+
+            if aligned_d and aligned_h and aligned_30:
+                confluencia = "Excelente ✅✅"
+            elif aligned_h and aligned_30:
+                confluencia = "Boa ✅"
+            elif aligned_h or aligned_30:
+                confluencia = "Parcial ⚠️"
+            else:
+                confluencia = "Fraca ❌"
+
+            # ===================== WEIGHTED TOTAL SCORE =====================
+            # Normalize: D max=100, H max=100, 30M max=70→scaled to 100
+            score_30_normalized = (score_30 / 70) * 100 if score_30 > 0 else 0
+            score_total = round((score_d * 0.30) + (score_h * 0.40) + (score_30_normalized * 0.30))
+
+            # ===================== RISK MANAGEMENT (ATR-based) =====================
+            stop = preco - (atr_d * 1.8)
+            risco = preco - stop
+            alvo_2 = preco + (risco * 2)
+            alvo_3 = preco + (risco * 3)
+
+            # ===================== EXIT SIGNALS =====================
+            sinais_saida = []
+            if not adx_rising_d:
+                sinais_saida.append("⚠️ ADX↓D")
+            if not adx_rising_h:
+                sinais_saida.append("⚠️ ADX↓1H")
+            if rsi_d > rsi_max:
+                sinais_saida.append("⚠️ RSI↑D")
+            if rsi_h > rsi_max:
+                sinais_saida.append("⚠️ RSI↑1H")
+            sinal_saida = " | ".join(sinais_saida) if sinais_saida else "✅"
+
+            resultados.append({
+                'Ativo': symbol.replace('.SA', ''),
+                'Preço': round(preco, 2),
+                'Stop': round(stop, 2),
+                'Alvo 1:2': round(alvo_2, 2),
+                'Alvo 1:3': round(alvo_3, 2),
+                'Vol Ratio': round(vol_ratio_d, 2),
+                'RSI D': round(rsi_d, 1),
+                'RSI 1H': round(rsi_h, 1),
+                'RSI 30M': round(rsi_30, 1),
+                'ADX D': round(adx_d_val, 1),
+                'ADX 1H': round(adx_h_val, 1),
+                'ADX 30M': round(adx_30_val, 1),
+                'ADX Rising D': '✅' if adx_rising_d else '❌',
+                'ADX Rising 1H': '✅' if adx_rising_h else '❌',
+                '+DI': round(plus_di_d, 1),
+                '-DI': round(minus_di_d, 1),
+                'Tríade D': '✅' if triade_d else '⚠️',
+                'Tríade 1H': '✅' if triade_h else '⚠️',
+                'Score D': score_d,
+                'Score 1H': score_h,
+                'Score 30M': score_30,
+                'Score Total': score_total,
+                'Confluência': confluencia,
+                'Saída': sinal_saida,
+            })
+        except Exception:
+            continue
+    return pd.DataFrame(resultados)
+
+
 # ===================== INTERFACE =====================
 st.markdown("---")
 st.subheader("⚙️ Painel de Controle Global")
@@ -1058,7 +1274,7 @@ else:
     ativos_global = ATIVOS_COMPLETO
 
 # ===================== LEGENDA =====================
-with st.expander("📖 Legenda dos Indicadores", expanded=False):
+with st.expander("📖 Legenda dos Indicadores", expanded=True):
     col_leg1, col_leg2, col_leg3 = st.columns(3)
     with col_leg1:
         st.markdown("""
@@ -1087,7 +1303,7 @@ with st.expander("📖 Legenda dos Indicadores", expanded=False):
         """)
 
 # ===================== ATIVOS EM USO =====================
-with st.expander(f"📋 Ativos em uso — modo: {lista_global} ({len(ativos_global)} ativos)", expanded=False):
+with st.expander(f"📋 Ativos em uso — modo: {lista_global} ({len(ativos_global)} ativos)", expanded=True):
     if lista_global == "Universal":
         col_u1, col_u2 = st.columns(2)
         with col_u1:
@@ -1111,7 +1327,7 @@ with st.expander(f"📋 Ativos em uso — modo: {lista_global} ({len(ativos_glob
                 st.info("Selecione **Todos** ou **Universal** para incluir mais ativos.")
 
 # ===================== CONTROLE DE ESTADO =====================
-scanners_keys = ['df_hibrido', 'df_rr', 'df_pro', 'df_exp']
+scanners_keys = ['df_fusion', 'df_hibrido', 'df_rr', 'df_pro', 'df_exp']
 legacy_keys = ['df_legacy_prof', 'df_legacy_intra', 'df_legacy_exp']
 
 for key in scanners_keys + legacy_keys:
@@ -1344,6 +1560,70 @@ def run_scanner(nome, funcao, key, descricao=""):
             adicionar_botao_copiar(st.session_state[key], label=key)
 
 
+# Scanner 0: 🔥 Swing Trade Fusion (HERO SCANNER)
+with st.expander("🔥 Swing Trade Fusion — Best of Legacy + Evolved", expanded=True):
+    st.caption(f"Multi-TF completo (D+1H+30M) | Score ponderado (D×0.3 + 1H×0.4 + 30M×0.3) | Tríade + DI + ADX Rising + Stop/Alvos | {len(ativos_global)} ativos ({lista_global})")
+
+    if rodar_todos or st.session_state['df_fusion'] is None:
+        with st.spinner("Analisando Swing Trade Fusion..."):
+            st.session_state['df_fusion'] = scanner_swing_trade_fusion(ativos_global, adx_min, rsi_min, rsi_max, min_vol_ratio)
+
+    df_fusion = st.session_state['df_fusion']
+    if df_fusion is not None and not df_fusion.empty:
+        # Metrics row
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            st.metric("Total Ativos", len(df_fusion))
+        with col2:
+            excelentes = len(df_fusion[df_fusion['Confluência'] == 'Excelente ✅✅'])
+            st.metric("Confluência Excelente", excelentes)
+        with col3:
+            boas = len(df_fusion[df_fusion['Confluência'].isin(['Boa ✅', 'Excelente ✅✅'])])
+            st.metric("Confluência Boa+", boas)
+        with col4:
+            triade_full = len(df_fusion[(df_fusion['Tríade D'] == '✅') & (df_fusion['Tríade 1H'] == '✅')])
+            st.metric("Tríade D+1H ✅", triade_full)
+
+        # Sort by Score Total descending
+        df_sorted = df_fusion.sort_values('Score Total', ascending=False).reset_index(drop=True)
+
+        column_config_fusion = {
+            'Preço': st.column_config.NumberColumn('Preço (R$)', format="R$ %.2f"),
+            'Stop': st.column_config.NumberColumn('Stop (R$)', format="R$ %.2f"),
+            'Alvo 1:2': st.column_config.NumberColumn('Alvo 1:2 (R$)', format="R$ %.2f"),
+            'Alvo 1:3': st.column_config.NumberColumn('Alvo 1:3 (R$)', format="R$ %.2f"),
+            'Vol Ratio': st.column_config.NumberColumn('Vol Ratio', format="%.2f"),
+            'RSI D': st.column_config.NumberColumn('RSI D', format="%.1f"),
+            'RSI 1H': st.column_config.NumberColumn('RSI 1H', format="%.1f"),
+            'RSI 30M': st.column_config.NumberColumn('RSI 30M', format="%.1f"),
+            'ADX D': st.column_config.NumberColumn('ADX D', format="%.1f"),
+            'ADX 1H': st.column_config.NumberColumn('ADX 1H', format="%.1f"),
+            'ADX 30M': st.column_config.NumberColumn('ADX 30M', format="%.1f"),
+            '+DI': st.column_config.NumberColumn('+DI', format="%.1f"),
+            '-DI': st.column_config.NumberColumn('-DI', format="%.1f"),
+            'Score D': st.column_config.NumberColumn('Score D', format="%d"),
+            'Score 1H': st.column_config.NumberColumn('Score 1H', format="%d"),
+            'Score 30M': st.column_config.NumberColumn('Score 30M', format="%d"),
+            'Score Total': st.column_config.ProgressColumn(
+                'Score Total',
+                min_value=0,
+                max_value=100,
+                format="%d",
+            ),
+        }
+
+        st.dataframe(
+            df_sorted,
+            use_container_width=True,
+            hide_index=True,
+            column_config=column_config_fusion,
+        )
+
+        st.success(f"{len(df_sorted)} ativos encontrados")
+        adicionar_botao_copiar(df_sorted, label="fusion")
+    else:
+        st.info("Nenhum ativo encontrado com os filtros atuais.")
+
 # Scanner 1: Swing Híbrido
 run_scanner(
     "🔀 Scanner Swing Híbrido (Daily + 1H)",
@@ -1389,7 +1669,7 @@ st.markdown("## 📚 LEGACY - VERSÕES ANTIGAS (COMPARAÇÃO)")
 st.caption(f"Compare os resultados dos scanners evoluídos com as versões antigas/legadas | {len(ativos_global)} ativos ({lista_global})")
 
 # Legacy Scanner 1: Profissional
-with st.expander("🔮 Legacy - Profissional (Final Corrigida)", expanded=False):
+with st.expander("🔮 Legacy - Profissional (Final Corrigida)", expanded=True):
     st.caption(f"Multi-timeframe: Daily + 1H + 30M | Filtros: Vol>1.5x, EMA20/50, ADX>20, RSI 45-75 | {len(ativos_global)} ativos ({lista_global})")
 
     if rodar_todos or st.session_state['df_legacy_prof'] is None:
@@ -1436,7 +1716,7 @@ with st.expander("🔮 Legacy - Profissional (Final Corrigida)", expanded=False)
 
 
 # Legacy Scanner 2: Intraday/Swing Curto Prazo
-with st.expander("⏰ Legacy - Intraday/Swing Curto Prazo", expanded=False):
+with st.expander("⏰ Legacy - Intraday/Swing Curto Prazo", expanded=True):
     st.caption(f"Filtros rigorosos: Vol>1.7x, Liquidez>8M, ADX≥22, RSI 47-73 | Score ponderado: Daily×1.6 + 1H + 30M | {len(ativos_global)} ativos ({lista_global})")
 
     if rodar_todos or st.session_state['df_legacy_intra'] is None:
@@ -1480,7 +1760,7 @@ with st.expander("⏰ Legacy - Intraday/Swing Curto Prazo", expanded=False):
 
 
 # Legacy Scanner 3: Expandida
-with st.expander("🌐 Legacy - Expandida (Mid + Small Caps)", expanded=False):
+with st.expander("🌐 Legacy - Expandida (Mid + Small Caps)", expanded=True):
     st.caption(f"Vol médio relaxado (≥2.5M) | Confluência multi-TF detalhada | {len(ativos_global)} ativos ({lista_global})")
 
     if rodar_todos or st.session_state['df_legacy_exp'] is None:
