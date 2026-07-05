@@ -59,195 +59,205 @@ def baixar_dados_15m(symbol):
     except Exception:
         return pd.DataFrame()
 
-def processar_ativos(ativos, min_vol_fin, min_ratio, max_ratio, min_rvol):
+def coletar_candidatos(ativos, min_ratio, max_ratio):
+    """Baixa os dados UMA única vez e calcula todas as métricas dos ativos que
+    passam no filtro de estabilização (Decay Ratio) e na tendência de alta.
+
+    Usa os limites mais permissivos (perfil Agressivo: RVOL >= 0.8 e Vol >= R$ 300 mil)
+    apenas para reunir todos os candidatos possíveis. A filtragem fina por perfil de
+    risco fica a cargo de `filtrar_por_perfil`, evitando baixar os mesmos dados 3x."""
     resultados = []
-    
+
     progresso_texto = st.empty()
     barra_progresso = st.progress(0)
-    
+
+    # Limite mais permissivo (Agressivo) -> não descarta candidatos antes da filtragem por perfil
+    min_vol_fin_floor = 300_000
+    min_rvol_floor = 0.8
+
     total = len(ativos)
     for i, symbol in enumerate(ativos):
         progresso_texto.text(f"Analisando {symbol} ({i+1}/{total})...")
         barra_progresso.progress((i + 1) / total)
-        
+
         df = baixar_dados_15m(symbol)
         if df is None or df.empty or len(df) < 10:
             continue
-            
+
         try:
             # Pega apenas os dados do dia de hoje (ou do último dia útil disponível)
             ultimo_dia = df.index.date[-1]
             df_hoje = df[df.index.date == ultimo_dia]
-            
+
             # Precisamos de pelo menos 2 candles hoje (10:00 e 10:15)
             if len(df_hoje) < 2:
                 continue
-                
+
             c1 = df_hoje.iloc[0] # Candle 1 (10:00)
             c2 = df_hoje.iloc[1] # Candle 2 (10:15)
             atual = df_hoje.iloc[-1] # Candle mais recente
-            
+
             # Volume Financeiro do C1 (Preço Fechamento * Quantidade)
             vol_fin_c1 = c1['Close'] * c1['Volume']
-            
-            if vol_fin_c1 < min_vol_fin:
+
+            if vol_fin_c1 < min_vol_fin_floor:
                 continue
-                
+
             vol_c1 = float(c1['Volume'])
             vol_c2 = float(c2['Volume'])
-            
+
             if vol_c1 == 0:
                 continue
-                
+
             decay_ratio = vol_c2 / vol_c1
-            
+
             # Volume Ratio (RVOL) - Confirmação para Swing
             # Compara o volume recente com a média de volume dos últimos 20 períodos de 15m
             df['Vol_Media_20'] = df['Volume'].rolling(20).mean()
             vol_media = float(df['Vol_Media_20'].iloc[-1])
-            
-            # Ratio do momento atual (pode ser o C2 ou o atual, vamos usar o acumulado da manhã vs média)
-            # Para ser mais dinâmico, vamos pegar o volume da última barra fechada ou a média da manhã
+
+            # RVOL do C1 (abertura) como grande confirmador institucional;
+            # Decay Ratio para saber se estabilizou.
             rvol = vol_c1 / vol_media if vol_media > 0 else 0
-            rvol_c2 = vol_c2 / vol_media if vol_media > 0 else 0
-            
-            # Vamos usar o RVOL do C1 (abertura) como o grande confirmador institucional
-            # E o Decay Ratio para saber se estabilizou
-            
-            if min_ratio <= decay_ratio <= max_ratio and rvol >= min_rvol:
-                # Calcula tendência usando os dados dos 5 dias inteiros
-                df['EMA9'] = ta.ema(df['Close'], length=9)
-                df['EMA20'] = ta.ema(df['Close'], length=20)
-                
-                close_atual = float(atual['Close'])
-                ema9 = float(df['EMA9'].iloc[-1])
-                ema20 = float(df['EMA20'].iloc[-1])
-                
-                tendencia = "✅ ALTA" if close_atual > ema9 else "❌ BAIXA"
-                
-                # O usuário solicitou ver APENAS movimentos de alta
-                if tendencia == "❌ BAIXA":
-                    continue
-                
-                # Variação do dia (do fechamento do C1 pro Atual, pra saber se andou)
-                var_percentual = ((close_atual - c1['Close']) / c1['Close']) * 100
-                
-                # Cálculo da VWAP Intraday do dia atual
-                df_hoje_calc = df_hoje.copy()
-                df_hoje_calc['Typical_Price'] = (df_hoje_calc['High'] + df_hoje_calc['Low'] + df_hoje_calc['Close']) / 3
-                df_hoje_calc['Vol_x_TP'] = df_hoje_calc['Typical_Price'] * df_hoje_calc['Volume']
-                vol_total_dia = df_hoje_calc['Volume'].sum()
-                vwap = df_hoje_calc['Vol_x_TP'].sum() / vol_total_dia if vol_total_dia > 0 else close_atual
-                
-                # Definir Setup sugerido (Proximidade das médias = Pullback, Longe = Rompimento)
-                # Consideramos "perto" se o preço estiver a menos de 0.5% da VWAP ou da EMA9
-                dist_vwap = abs(close_atual - vwap) / close_atual
-                dist_ema9 = abs(close_atual - ema9) / close_atual
-                
-                if dist_vwap <= 0.005 or dist_ema9 <= 0.005:
-                    setup = "🧲 Pullback (Média/VWAP)"
-                else:
-                    setup = "🚀 Rompimento (Máxima)"
-                
-                resultados.append({
-                    'Ativo': symbol.replace('.SA', ''),
-                    'Preço Atual': round(close_atual, 2),
-                    'Setup / Gatilho': setup,
-                    'Tendência (15m)': tendencia,
-                    'Volume Ratio (RVOL)': round(rvol, 2),
-                    'Ratio Queda (10:15/10:00)': round(decay_ratio, 2),
-                    'Vol Financeiro C1 (R$ Mi)': round(vol_fin_c1 / 1_000_000, 2),
-                    'Var. desde Abertura (%)': round(var_percentual, 2),
-                    'Hora Últ. Candle': df_hoje.index[-1].strftime('%H:%M')
-                })
-        except Exception as e:
+
+            if not (min_ratio <= decay_ratio <= max_ratio and rvol >= min_rvol_floor):
+                continue
+
+            # Calcula tendência usando os dados dos 5 dias inteiros
+            df['EMA9'] = ta.ema(df['Close'], length=9)
+            df['EMA20'] = ta.ema(df['Close'], length=20)
+
+            close_atual = float(atual['Close'])
+            ema9 = float(df['EMA9'].iloc[-1])
+            ema20 = float(df['EMA20'].iloc[-1])
+
+            tendencia = "✅ ALTA" if close_atual > ema9 else "❌ BAIXA"
+
+            # O usuário solicitou ver APENAS movimentos de alta
+            if tendencia == "❌ BAIXA":
+                continue
+
+            # Variação do dia (do fechamento do C1 pro Atual, pra saber se andou)
+            var_percentual = ((close_atual - c1['Close']) / c1['Close']) * 100
+
+            # Cálculo da VWAP Intraday do dia atual
+            df_hoje_calc = df_hoje.copy()
+            df_hoje_calc['Typical_Price'] = (df_hoje_calc['High'] + df_hoje_calc['Low'] + df_hoje_calc['Close']) / 3
+            df_hoje_calc['Vol_x_TP'] = df_hoje_calc['Typical_Price'] * df_hoje_calc['Volume']
+            vol_total_dia = df_hoje_calc['Volume'].sum()
+            vwap = df_hoje_calc['Vol_x_TP'].sum() / vol_total_dia if vol_total_dia > 0 else close_atual
+
+            # Definir Setup sugerido (Proximidade das médias = Pullback, Longe = Rompimento)
+            # Consideramos "perto" se o preço estiver a menos de 0.5% da VWAP ou da EMA9
+            dist_vwap = abs(close_atual - vwap) / close_atual
+            dist_ema9 = abs(close_atual - ema9) / close_atual
+
+            if dist_vwap <= 0.005 or dist_ema9 <= 0.005:
+                setup = "🧲 Pullback (Média/VWAP)"
+            else:
+                setup = "🚀 Rompimento (Máxima)"
+
+            resultados.append({
+                'Ativo': symbol.replace('.SA', ''),
+                'Preço Atual': round(close_atual, 2),
+                'Setup / Gatilho': setup,
+                'Tendência (15m)': tendencia,
+                'Volume Ratio (RVOL)': round(rvol, 2),
+                'Ratio Queda (10:15/10:00)': round(decay_ratio, 2),
+                'Vol Financeiro C1 (R$ Mi)': round(vol_fin_c1 / 1_000_000, 2),
+                'Var. desde Abertura (%)': round(var_percentual, 2),
+                'Hora Últ. Candle': df_hoje.index[-1].strftime('%H:%M')
+            })
+        except Exception:
             continue
-            
+
     progresso_texto.empty()
     barra_progresso.empty()
     return pd.DataFrame(resultados)
 
 
+def filtrar_por_perfil(df, min_vol, min_rvol):
+    """Filtra o DataFrame de candidatos pelos limites de um perfil de risco.
+    `min_vol` vem em R$ e a coluna está em R$ Mi, por isso a conversão."""
+    if df.empty:
+        return df
+    mask = (df['Volume Ratio (RVOL)'] >= min_rvol) & \
+           (df['Vol Financeiro C1 (R$ Mi)'] >= min_vol / 1_000_000)
+    return df[mask].sort_values(by="Volume Ratio (RVOL)", ascending=False).reset_index(drop=True)
+
+
+# ===================== PERFIS DE RISCO =====================
+# O scanner roda automaticamente no carregamento da página (sem seleção de perfil)
+# e exibe os resultados já separados por cada perfil de risco abaixo.
+PERFIS = [
+    {
+        "nome": "🛡️ Conservador",
+        "min_rvol": 1.5,
+        "min_vol": 1_000_000,
+        "desc": "Exige alto fluxo institucional na abertura (RVOL > 1.5x e Vol. Fin. > R$ 1 Mi).",
+    },
+    {
+        "nome": "⚖️ Moderado",
+        "min_rvol": 1.2,
+        "min_vol": 500_000,
+        "desc": "Equilíbrio para boas oportunidades (RVOL > 1.2x e Vol. Fin. > R$ 500 mil).",
+    },
+    {
+        "nome": "🔥 Agressivo",
+        "min_rvol": 0.8,
+        "min_vol": 300_000,
+        "desc": "Permite fluxo médio e antecipações (RVOL > 0.8x e Vol. Fin. > R$ 300 mil).",
+    },
+]
+
 # ===================== INTERFACE =====================
-st.sidebar.header("Perfis de Confirmação")
-
-perfil = st.sidebar.radio(
-    "Escolha o seu perfil de risco:",
-    ["🛡️ Conservador", "⚖️ Moderado", "🔥 Agressivo", "⚙️ Personalizado"],
-    index=1
-)
-
-if perfil == "🛡️ Conservador":
-    default_rvol = 1.5
-    default_vol = 1_000_000
-    st.sidebar.caption("Exige alto fluxo institucional na abertura (>1.5x)")
-elif perfil == "⚖️ Moderado":
-    default_rvol = 1.2
-    default_vol = 500_000
-    st.sidebar.caption("Equilíbrio para boas oportunidades (>1.2x)")
-elif perfil == "🔥 Agressivo":
-    default_rvol = 0.8
-    default_vol = 300_000
-    st.sidebar.caption("Permite fluxo médio e antecipações (>0.8x)")
-else:
-    default_rvol = 1.2
-    default_vol = 500_000
-
-disabled = perfil != "⚙️ Personalizado"
-
-st.sidebar.markdown("---")
-st.sidebar.header("Filtros Numéricos")
-
-min_rvol = st.sidebar.number_input(
-    "Volume Ratio Mínimo (RVOL)", 
-    value=float(default_rvol), 
-    step=0.1,
-    disabled=disabled,
-    help="Confirmação de Movimento: Quantas vezes o volume foi maior que a média."
-)
-
-min_vol = st.sidebar.number_input(
-    "Volume Financeiro Mín. (R$)", 
-    value=int(default_vol), 
-    step=100_000,
-    disabled=disabled,
-    help="Liquidez mínima no candle das 10:00."
-)
-
-st.sidebar.markdown("---")
-st.sidebar.markdown("### Decay Ratio (Estabilização)")
+st.sidebar.header("Decay Ratio (Estabilização)")
 st.sidebar.markdown("Após a explosão inicial, o volume precisa acalmar para uma entrada segura.")
 max_ratio = st.sidebar.slider("Máximo Ratio", 0.1, 1.0, 0.60, 0.05)
 min_ratio = st.sidebar.slider("Mínimo Ratio", 0.0, 0.5, 0.10, 0.05)
 
 st.sidebar.markdown("---")
-st.sidebar.info("Recomendado executar às 10:30 ou 10:45.")
+st.sidebar.info(
+    "🔄 O scanner roda automaticamente ao abrir a página e mostra os resultados "
+    "separados por perfil de risco. Recomendado executar às 10:30 ou 10:45."
+)
 
-# Botão para rodar
-if st.button("🚀 Rodar Scanner de Abertura (Todos os Ativos)", type="primary"):
-    with st.spinner(f"Analisando confirmações de swing trade em {len(ATIVOS_B3_AMPLIADO)} ativos..."):
-        df_resultados = processar_ativos(ATIVOS_B3_AMPLIADO, min_vol, min_ratio, max_ratio, min_rvol)
-        
-        if not df_resultados.empty:
-            # Ordena pelos que tem maior RVOL (maior confirmação institucional)
-            df_resultados = df_resultados.sort_values(by="Volume Ratio (RVOL)", ascending=False).reset_index(drop=True)
-            
-            st.success(f"Encontrados {len(df_resultados)} ativos confirmando movimento!")
-            
+# ===================== EXECUÇÃO AUTOMÁTICA (PAGE LOAD) =====================
+with st.spinner(f"Analisando confirmações de swing trade em {len(ATIVOS_B3_AMPLIADO)} ativos..."):
+    df_todos = coletar_candidatos(ATIVOS_B3_AMPLIADO, min_ratio, max_ratio)
+
+if df_todos.empty:
+    st.warning("Nenhum ativo atendeu aos critérios de estabilização hoje.")
+else:
+    st.success(
+        f"{len(df_todos)} ativo(s) em estabilização encontrados. "
+        "Resultados separados por perfil de risco 👇"
+    )
+
+    col_config = {
+        "Preço Atual": st.column_config.NumberColumn(format="R$ %.2f"),
+        "Var. desde Abertura (%)": st.column_config.NumberColumn(format="%.2f %%"),
+        "Volume Ratio (RVOL)": st.column_config.NumberColumn(format="%.1fx"),
+    }
+
+    abas = st.tabs([p["nome"] for p in PERFIS])
+    for aba, perfil in zip(abas, PERFIS):
+        df_perfil = filtrar_por_perfil(df_todos, perfil["min_vol"], perfil["min_rvol"])
+        with aba:
+            st.caption(perfil["desc"])
+            if df_perfil.empty:
+                st.info(f"Nenhum ativo no perfil {perfil['nome']} hoje.")
+                continue
+
+            st.markdown(f"**{len(df_perfil)} ativo(s)** neste perfil.")
             st.dataframe(
-                df_resultados, 
+                df_perfil,
                 width=1000,
                 hide_index=True,
-                column_config={
-                    "Preço Atual": st.column_config.NumberColumn(format="R$ %.2f"),
-                    "Var. desde Abertura (%)": st.column_config.NumberColumn(format="%.2f %%"),
-                    "Volume Ratio (RVOL)": st.column_config.NumberColumn(format="%.1fx")
-                }
+                column_config=col_config,
             )
-            
-            # Botão de copiar (usando st.code para facilitar)
-            lista_str = ",".join(df_resultados['Ativo'].tolist())
-            st.markdown("### Lista para copiar (ProfitChart):")
+
+            # Lista para copiar (ProfitChart)
+            lista_str = ",".join(df_perfil['Ativo'].tolist())
+            st.markdown("##### Lista para copiar (ProfitChart):")
             st.code(lista_str, language="text")
-        else:
-            st.warning("Nenhum ativo atendeu aos critérios de estabilização hoje.")
