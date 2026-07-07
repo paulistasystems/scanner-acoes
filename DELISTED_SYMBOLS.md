@@ -14,6 +14,26 @@
 
 ---
 
+## 🆕 DELISTED 2026-07-07 (3 symbols)
+
+Removidos do scanner após falhas consistentes de download no Yahoo Finance
+(`empty/truncated response` em todas as tentativas e intervalos, com `fail_count`
+9–10 e 3 tentativas cada). Fonte: `2026-07-07T15-40_export.csv`, export do log de
+falhas da camada de dados SQLite (`data_layer.list_failures()`).
+
+| Symbol | Categoria | Origem no scanner | Motivo |
+|--------|-----------|-------------------|--------|
+| `NEOE3.SA` | Ações — Energia Elétrica | `UNIV_ENERGIA` (scanner_interface_Streamlit.py + scanner_abertura.py) | Neoenergia — empty/truncated (30m, 1h, 1d) |
+| `IRDM11.SA` | FII | `_FIIS_UNIVERSAL` / lista de FIIs (ambos os scanners) | FII Iridium — empty/truncated (30m, 1h) |
+| `RBRF11.SA` | FII | `_FIIS_UNIVERSAL` / lista de FIIs (ambos os scanners) | FII RB Capital — empty/truncated (30m, 1h) |
+
+> **Nota:** a camada de dados trata `empty/truncated response` como o sintoma de
+> oscilação/flicker do Yahoo (respostas limitadas/throttled), não necessariamente
+> como delisting confirmado via search API. Estes 3 ativos falharam de forma
+> persistente e foram retirados do universo como candidatos a blacklist.
+
+---
+
 ## ✅ UPDATED SYMBOLS (6 symbols)
 
 These symbols have been successfully updated in `scanner_interface_Streamlit.py`:
@@ -196,6 +216,7 @@ Some symbols may require additional verification:
 - **2026-07-04**: Initial verification completed
 - **2026-07-04**: Updated 6 symbols with confirmed working replacements
 - **2026-07-04**: Documented 31 delisted/missing symbols
+- **2026-07-07**: Removidos 3 símbolos com falhas persistentes de download (`NEOE3.SA`, `IRDM11.SA`, `RBRF11.SA`) a partir do export de falhas do data_layer
 
 ---
 

@@ -75,7 +75,7 @@ UNIV_BANCOS = [
 # Ações - Energia Elétrica
 UNIV_ENERGIA = [
     'EQTL3.SA', 'CMIG4.SA', 'CPFE3.SA',
-    'ENGI11.SA', 'CPLE3.SA', 'NEOE3.SA', 'AURE3.SA', 'TAEE11.SA',
+    'ENGI11.SA', 'CPLE3.SA', 'AURE3.SA', 'TAEE11.SA',
     'EGIE3.SA', 'COCE5.SA', 'ENEV3.SA',
     'CSMG3.SA', 'SBSP3.SA', 'SAPR11.SA',
 ]
@@ -204,11 +204,10 @@ FIIS_B3 = [
     # Lajes Corporativas
     'KNRI11.SA', 'PVBI11.SA', 'JSRE11.SA', 'BRCR11.SA', 'RCRB11.SA',
     # Papel (CRI / CRA)
-    'MXRF11.SA', 'CPTS11.SA', 'IRDM11.SA', 'RBRR11.SA', 'RECR11.SA',
+    'MXRF11.SA', 'CPTS11.SA', 'RBRR11.SA', 'RECR11.SA',
     'VGIP11.SA', 'KNCR11.SA', 'HGCR11.SA',
     # Híbridos / Diversificados
     'HGBS11.SA', 'ALZR11.SA', 'TRXF11.SA', 'TGAR11.SA',
-    'RBRF11.SA',
 ]
 
 # ===================== LISTA MASTER COMBINADA =====================
