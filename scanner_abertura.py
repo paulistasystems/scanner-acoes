@@ -70,6 +70,20 @@ def _prewarm_com_progresso(ativos, intervals, rotulo="Baixando dados"):
         barra.empty()
         texto.empty()
 
+def _candle_por_hora(df_dia, hora, minuto):
+    """Retorna o último candle do dia cuja ABERTURA seja hora:minuto (hora B3),
+    ou None se não existir.
+
+    Substitui o acesso posicional (iloc[0]/iloc[1]): em vez de *assumir* que o
+    primeiro candle do dia é a abertura das 10:00, TRAVA de fato no horário real
+    da B3 — robusto a gaps, candles de leilão ou respostas truncadas do Yahoo.
+    Assim o pico de volume (RVOL) é sempre medido no verdadeiro candle de abertura."""
+    if df_dia is None or df_dia.empty:
+        return None
+    sub = df_dia[(df_dia.index.hour == hora) & (df_dia.index.minute == minuto)]
+    return sub.iloc[-1] if not sub.empty else None
+
+
 def coletar_candidatos(ativos, min_ratio, max_ratio):
     """Baixa os dados UMA única vez e calcula todas as métricas dos ativos que
     passam no filtro de estabilização (Decay Ratio) e na tendência de alta.
@@ -77,6 +91,10 @@ def coletar_candidatos(ativos, min_ratio, max_ratio):
     Usa os limites mais permissivos (perfil Agressivo: RVOL >= 0.8 e Vol >= R$ 300 mil)
     apenas para reunir todos os candidatos possíveis. A filtragem fina por perfil de
     risco fica a cargo de `filtrar_por_perfil`, evitando baixar os mesmos dados 3x."""
+    hoje = data_layer.session_today()
+    if hoje is None:
+        return pd.DataFrame()   # fim de semana — sem pregão para analisar hoje
+
     resultados = []
 
     progresso_texto = st.empty()
@@ -98,17 +116,24 @@ def coletar_candidatos(ativos, min_ratio, max_ratio):
             continue
 
         try:
-            # Pega apenas os dados do dia de hoje (ou do último dia útil disponível)
-            ultimo_dia = df.index.date[-1]
-            df_hoje = df[df.index.date == ultimo_dia]
+            # ESTRITAMENTE o dia de HOJE (pregão corrente). Se a sessão de hoje ainda
+            # não gerou candles (antes da abertura / dados defasados), df_hoje fica
+            # vazio e o ativo é pulado — nunca cai para o pregão anterior.
+            df_hoje = df[df.index.date == hoje]
 
             # Precisamos de pelo menos 2 candles hoje (10:00 e 10:15)
             if len(df_hoje) < 2:
                 continue
 
-            c1 = df_hoje.iloc[0] # Candle 1 (10:00)
-            c2 = df_hoje.iloc[1] # Candle 2 (10:15)
-            atual = df_hoje.iloc[-1] # Candle mais recente
+            # Trava nos candles de abertura por HORÁRIO REAL (10:00 e 10:15), e não
+            # por posição. Garante que o pico de volume seja medido sempre no candle
+            # de abertura da B3, mesmo se o Yahoo devolver gaps/leilão no início.
+            c1 = _candle_por_hora(df_hoje, 10, 0)   # abertura (10:00)
+            c2 = _candle_por_hora(df_hoje, 10, 15)  # 10:15
+            if c1 is None or c2 is None:
+                # Pregão cedo demais: ainda não fechou o candle das 10:15.
+                continue
+            atual = df_hoje.iloc[-1]  # candle mais recente do dia
 
             # Volume Financeiro do C1 (Preço Fechamento * Quantidade)
             vol_fin_c1 = c1['Close'] * c1['Volume']
@@ -124,13 +149,14 @@ def coletar_candidatos(ativos, min_ratio, max_ratio):
 
             decay_ratio = vol_c2 / vol_c1
 
-            # Volume Ratio (RVOL) - Confirmação para Swing
-            # Compara o volume recente com a média de volume dos últimos 20 períodos de 15m
+            # RVOL do C1 (abertura) — confirmador institucional de pico de volume.
+            # A média-base é lida NA LINHA da abertura (e não no último candle, que
+            # mudaria conforme o horário em que o scanner é rodado). Assim o RVOL e o
+            # perfil de risco ficam TRAVADOS no pregão: só dependem do dia.
             df['Vol_Media_20'] = df['Volume'].rolling(20).mean()
-            vol_media = float(df['Vol_Media_20'].iloc[-1])
-
-            # RVOL do C1 (abertura) como grande confirmador institucional;
-            # Decay Ratio para saber se estabilizou.
+            pos_c1 = df.index.get_loc(c1.name)
+            # candle imediatamente ANTERIOR à abertura → média do volume "normal" pré-abertura
+            vol_media = float(df['Vol_Media_20'].iloc[pos_c1 - 1]) if pos_c1 > 0 else 0.0
             rvol = vol_c1 / vol_media if vol_media > 0 else 0
 
             if not (min_ratio <= decay_ratio <= max_ratio and rvol >= min_rvol_floor):
@@ -240,7 +266,10 @@ with st.spinner(f"Analisando confirmações de swing trade em {len(ATIVOS_B3_AMP
     df_todos = coletar_candidatos(ATIVOS_B3_AMPLIADO, min_ratio, max_ratio)
 
 if df_todos.empty:
-    st.warning("Nenhum ativo atendeu aos critérios de estabilização hoje.")
+    if data_layer.session_today() is None:
+        st.warning("Hoje não há pregão na B3 (fim de semana). Rode em dia útil, a partir das 10:15.")
+    else:
+        st.warning("Nenhum ativo atendeu aos critérios de estabilização hoje.")
 else:
     st.success(
         f"{len(df_todos)} ativo(s) em estabilização encontrados. "

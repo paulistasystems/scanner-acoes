@@ -143,6 +143,20 @@ def _last_trading_day(now):
     return d
 
 
+def session_today(now=None):
+    """Data (date, fuso B3) do pregão de HOJE se hoje for dia útil (seg–sex),
+    ou None em fim de semana. Feriados não são rastreados (cf. CLAUDE.md).
+
+    Diferente de `_last_trading_day`, NÃO recua para o pregão anterior: serve para
+    travar análises estritamente no dia corrente — ex.: o scanner de abertura só
+    deve avaliar a sessão de hoje, nunca a de ontem como fallback."""
+    if now is None:
+        now = _now_brt()
+    if now.weekday() >= 5:
+        return None
+    return now.date()
+
+
 def _floor_to_grid(dt, minutes):
     """Arredonda para baixo até o grid de `minutes` alinhado à meia-noite."""
     total = dt.hour * 60 + dt.minute
