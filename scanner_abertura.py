@@ -282,24 +282,26 @@ else:
         "Volume Ratio (RVOL)": st.column_config.NumberColumn(format="%.1fx"),
     }
 
-    abas = st.tabs([p["nome"] for p in PERFIS])
-    for aba, perfil in zip(abas, PERFIS):
+    # Resultados em blocos empilhados (um por perfil), tudo na mesma página — sem abas.
+    for perfil in PERFIS:
         df_perfil = filtrar_por_perfil(df_todos, perfil["min_vol"], perfil["min_rvol"])
-        with aba:
-            st.caption(perfil["desc"])
-            if df_perfil.empty:
-                st.info(f"Nenhum ativo no perfil {perfil['nome']} hoje.")
-                continue
+        st.subheader(perfil["nome"])
+        st.caption(perfil["desc"])
+        if df_perfil.empty:
+            st.info(f"Nenhum ativo no perfil {perfil['nome']} hoje.")
+            st.divider()
+            continue
 
-            st.markdown(f"**{len(df_perfil)} ativo(s)** neste perfil.")
-            st.dataframe(
-                df_perfil,
-                width=1000,
-                hide_index=True,
-                column_config=col_config,
-            )
+        st.markdown(f"**{len(df_perfil)} ativo(s)** neste perfil.")
+        st.dataframe(
+            df_perfil,
+            width=1000,
+            hide_index=True,
+            column_config=col_config,
+        )
 
-            # Lista para copiar (ProfitChart)
-            lista_str = ",".join(df_perfil['Ativo'].tolist())
-            st.markdown("##### Lista para copiar (ProfitChart):")
-            st.code(lista_str, language="text")
+        # Lista para copiar (ProfitChart)
+        lista_str = ",".join(df_perfil['Ativo'].tolist())
+        st.markdown("##### Lista para copiar (ProfitChart):")
+        st.code(lista_str, language="text")
+        st.divider()
