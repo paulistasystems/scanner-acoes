@@ -9,6 +9,7 @@ import pandas as pd
 import yfinance as yf
 import pandas_ta as ta
 from datetime import datetime
+import data_layer
 
 # ===================== LISTAS POR CATEGORIA (BUSCA UNIVERSAL) =====================
 UNIV_BANCOS = ['ITUB4.SA', 'BBAS3.SA', 'BBDC4.SA', 'BBDC3.SA', 'SANB11.SA', 'BPAC11.SA', 'ITSA4.SA', 'BBSE3.SA', 'PSSA3.SA', 'BRSR6.SA', 'ABCB4.SA', 'BMGB4.SA']
@@ -49,15 +50,25 @@ st.title("🌅 SCANNER DE ABERTURA - ESTABILIZAÇÃO (15M)")
 st.markdown("Analisa o **volume do primeiro candle (10:00)** vs **candle das 10:15** para encontrar ativos em estabilização após gap/euforia inicial. Ideal para ser rodado a partir das 10:30.")
 
 # ===================== FUNÇÕES =====================
-@st.cache_data(ttl=180) # Cache de 3 minutos
 def baixar_dados_15m(symbol):
+    """Candles 15m via banco SQLite (data_layer). yfinance só preenche dados ausentes."""
+    return data_layer.get_bars(symbol, "15m", "5d")
+
+
+def _prewarm_com_progresso(ativos, intervals, rotulo="Baixando dados"):
+    """Aquisição antes da análise via data_layer.prewarm, com barra de progresso."""
+    total = max(1, len(ativos) * len(intervals))
+    barra = st.progress(0.0)
+    texto = st.empty()
+    texto.text(f"{rotulo} (0/{total})…")
+    def _cb(done, tot, symbol, ok):
+        barra.progress(done / tot if tot else 1.0)
+        texto.text(f"{rotulo}: {done}/{tot} — {symbol} {'✓' if ok else '✗'}")
     try:
-        df = yf.download(symbol, period="5d", interval="15m", progress=False, auto_adjust=True)
-        if isinstance(df.columns, pd.MultiIndex):
-            df = df.droplevel(1, axis=1)
-        return df
-    except Exception:
-        return pd.DataFrame()
+        return data_layer.prewarm(ativos, intervals, progress=_cb)
+    finally:
+        barra.empty()
+        texto.empty()
 
 def coletar_candidatos(ativos, min_ratio, max_ratio):
     """Baixa os dados UMA única vez e calcula todas as métricas dos ativos que
@@ -74,6 +85,8 @@ def coletar_candidatos(ativos, min_ratio, max_ratio):
     # Limite mais permissivo (Agressivo) -> não descarta candidatos antes da filtragem por perfil
     min_vol_fin_floor = 300_000
     min_rvol_floor = 0.8
+
+    _prewarm_com_progresso(ativos, ['15m'])
 
     total = len(ativos)
     for i, symbol in enumerate(ativos):

@@ -13,6 +13,7 @@ import pandas as pd
 import yfinance as yf
 import pandas_ta as ta
 from datetime import datetime
+import data_layer
 
 # Page config
 st.set_page_config(page_title="Scanner Ações BR", layout="wide", page_icon="📈")
@@ -234,16 +235,32 @@ CONTAGEM_CATEGORIAS = {
 
 
 # ===================== FUNÇÕES UTILITÁRIAS =====================
-@st.cache_data(ttl=300)
 def baixar_dados(symbol, interval, period):
-    """Baixa dados do yfinance com tratamento de MultiIndex."""
+    """Devolve candles OHLCV. Fonte única de verdade: o banco SQLite (data_layer).
+    O yfinance só é chamado para preencher dados ausentes — a decisão de buscar é
+    "está preenchido?", não "houve falha na tentativa". Assinatura preservada para
+    não alterar os ~22 pontos de chamada. Veja data_layer.get_bars."""
+    return data_layer.get_bars(symbol, interval, period)
+
+
+def _prewarm_com_progresso(ativos, intervals, rotulo="Baixando dados"):
+    """Aquisição ANTES da análise: baixa todos os dados necessários via
+    data_layer.prewarm (retry + log de falhas em fetch_failures), com barra de
+    progresso. Retorna a lista de (symbol, interval) que falharam. Assim todo o
+    download acontece antes de qualquer análise e os ativos não preenchidos ficam
+    registrados (e são pulados naturalmente pelas checagens de comprimento)."""
+    total = max(1, len(ativos) * len(intervals))
+    barra = st.progress(0.0)
+    texto = st.empty()
+    texto.text(f"{rotulo} (0/{total})…")
+    def _cb(done, tot, symbol, ok):
+        barra.progress(done / tot if tot else 1.0)
+        texto.text(f"{rotulo}: {done}/{tot} — {symbol} {'✓' if ok else '✗'}")
     try:
-        df = yf.download(symbol, interval=interval, period=period, progress=False, auto_adjust=True)
-        if isinstance(df.columns, pd.MultiIndex):
-            df = df.droplevel(1, axis=1)
-        return df
-    except Exception:
-        return pd.DataFrame()
+        return data_layer.prewarm(ativos, intervals, progress=_cb)
+    finally:
+        barra.empty()
+        texto.empty()
 
 
 def safe_float(x, default=0.0):
@@ -379,6 +396,7 @@ def legacy_profissional(ativos):
     - Simple scoring system per timeframe
     """
     resultados = []
+    _prewarm_com_progresso(ativos, ['1d', '1h', '30m'])
     for symbol in ativos:
         try:
             # ===================== DAILY =====================
@@ -516,6 +534,7 @@ def legacy_intraday_swing(ativos):
     - EMA9-based analysis
     """
     resultados = []
+    _prewarm_com_progresso(ativos, ['1d', '1h', '30m'])
     for symbol in ativos:
         try:
             # ===================== DAILY (Base) =====================
@@ -631,6 +650,7 @@ def legacy_expandida(ativos):
     resultados = []
     # Usa a lista de ativos fornecida
     ativos_exp = ativos
+    _prewarm_com_progresso(ativos_exp, ['1d', '1h', '30m'])
 
     for symbol in ativos_exp:
         try:
@@ -784,6 +804,7 @@ def scanner_swing_hibrido(ativos, adx_min, rsi_min, rsi_max, vol_ratio_min, vol_
     - Tríade básica
     """
     resultados = []
+    _prewarm_com_progresso(ativos, ['1d', '1h', '30m'])
     for symbol in ativos:
         try:
             df = baixar_dados(symbol, '1d', '1y')
@@ -839,6 +860,7 @@ def scanner_swing_rr(ativos, adx_min, rsi_min, rsi_max, vol_ratio_min, vol_medio
     - Colunas de risco/retorno
     """
     resultados = []
+    _prewarm_com_progresso(ativos, ['1d', '1h', '30m'])
     for symbol in ativos:
         try:
             df = baixar_dados(symbol, '1d', '1y')
@@ -904,6 +926,7 @@ def scanner_swing_profissional(ativos, adx_min, rsi_min, rsi_max, vol_ratio_min,
     - Filtros mais rigorosos
     """
     resultados = []
+    _prewarm_com_progresso(ativos, ['1d', '1h', '30m'])
     for symbol in ativos:
         try:
             df = baixar_dados(symbol, '1d', '1y')
@@ -977,6 +1000,7 @@ def scanner_swing_expandido(adx_min, rsi_min, rsi_max, vol_ratio_min, vol_medio_
     # Usa a lista fornecida ou a lista universal completa
     if ativos is None:
         ativos = ATIVOS_B3_AMPLIADO
+    _prewarm_com_progresso(ativos, ['1d', '1h', '30m'])
 
     for symbol in ativos:
         try:
@@ -1033,6 +1057,7 @@ def scanner_swing_trade_fusion(ativos, adx_min, rsi_min, rsi_max, vol_ratio_min,
     Weighted Score: Daily×0.30 + 1H×0.40 + 30M×0.30 (1H = main TF)
     """
     resultados = []
+    _prewarm_com_progresso(ativos, ['1d', '1h', '30m'])
     for symbol in ativos:
         try:
             # ===================== DAILY =====================
@@ -1401,7 +1426,7 @@ if rodar_todos:
     for key in EVOLVED_CACHE_KEYS:
         st.session_state[key] = None
     # Limpar cache do yfinance para baixar dados frescos
-    baixar_dados.clear()
+    data_layer.invalidate()
 
 st.markdown("---")
 
@@ -1489,6 +1514,92 @@ def formatar_dataframe_para_texto(df):
         linhas.append(" | ".join(pares))
 
     return "\n".join(linhas)
+
+
+# ===================== HELPER: EXPORTAR MARKDOWN (.md) =====================
+def df_para_markdown(df):
+    """Converte DataFrame em tabela markdown (GitHub-flavored), sem dependências externas."""
+    if df is None or df.empty:
+        return "_Nenhum ativo encontrado com os filtros atuais._"
+
+    cols = df.columns.tolist()
+    cabecalho = "| " + " | ".join(str(c) for c in cols) + " |"
+    separador = "| " + " | ".join("---" for _ in cols) + " |"
+
+    linhas = []
+    for _, row in df.iterrows():
+        celulas = []
+        for col in cols:
+            val = row[col]
+            if pd.isna(val):
+                celulas.append("N/A")
+            elif isinstance(val, float):
+                celulas.append(f"{val:.2f}")
+            else:
+                # Escapa pipes e qubra de linha para não quebrar a tabela
+                celulas.append(str(val).replace("|", "\\|").replace("\n", " "))
+        linhas.append("| " + " | ".join(celulas) + " |")
+
+    return "\n".join([cabecalho, separador] + linhas)
+
+
+def gerar_markdown_relatorio(df, label="resultado", vol_ratio=1.6, adx_min=23, rsi_min=52, rsi_max=70, usa_sliders=True, perfil=""):
+    """Gera um relatório em markdown (.md) do resultado do scanner, pronto para download."""
+    if df is None or df.empty:
+        return f"# {label}\n\n_Nenhum ativo encontrado com os filtros atuais._\n"
+
+    df_md = df.copy()
+    if "Score" in df_md.columns:
+        df_md = df_md.sort_values("Score", ascending=False).reset_index(drop=True)
+
+    perfil_linha = f"\n**Perfil:** {perfil}" if perfil else ""
+    datahora = datetime.now().strftime("%d/%m/%Y %H:%M")
+
+    if usa_sliders:
+        filtros = (
+            f"- Volume Ratio Mínimo: {vol_ratio}\n"
+            f"- ADX Mínimo: {adx_min}\n"
+            f"- RSI Mínimo: {rsi_min}\n"
+            f"- RSI Máximo: {rsi_max}\n"
+        )
+    else:
+        filtros = "- Filtros internos próprios (configurações fixas incorporadas no scanner)\n"
+
+    tabela = df_para_markdown(df_md)
+
+    return (
+        f"# {label}\n\n"
+        f"**Gerado em:** {datahora}{perfil_linha}\n"
+        f"**Ativos encontrados:** {len(df_md)}\n\n"
+        f"## Filtros utilizados\n\n"
+        f"{filtros}\n"
+        f"## Resultados\n\n"
+        f"{tabela}\n"
+    )
+
+
+def adicionar_botao_download_md(df, label="resultado", vol_ratio=1.6, adx_min=23, rsi_min=52, rsi_max=70, usa_sliders=True, perfil=""):
+    """Adiciona um botão nativo para baixar o resultado do scanner como arquivo .md."""
+    if df is None or df.empty:
+        return
+
+    md = gerar_markdown_relatorio(
+        df, label=label, vol_ratio=vol_ratio, adx_min=adx_min,
+        rsi_min=rsi_min, rsi_max=rsi_max, usa_sliders=usa_sliders, perfil=perfil,
+    )
+
+    # Nome de arquivo seguro (apenas alfanuméricos, - e _)
+    nome_arquivo = "".join(c if (c.isalnum() or c in "-_") else "_" for c in label).strip("_")[:60]
+    if not nome_arquivo:
+        nome_arquivo = "scanner"
+
+    st.download_button(
+        label="📄 Baixar .md",
+        data=md.encode("utf-8"),
+        file_name=f"{nome_arquivo}.md",
+        mime="text/markdown",
+        help="Baixa um relatório em markdown com os resultados deste scanner.",
+    )
 
 
 def adicionar_botao_copiar(df, label="resultado", vol_ratio=1.6, adx_min=23, rsi_min=52, rsi_max=70, usa_sliders=True, perfil=""):
@@ -1768,7 +1879,7 @@ rodar_legacy = st.button(
 if rodar_legacy:
     for key in LEGACY_CACHE_KEYS:
         st.session_state[key] = None
-    baixar_dados.clear()
+    data_layer.invalidate()
 
 # Legacy Scanner 1: Profissional
 with st.expander("🔮 Legacy - Profissional (Final Corrigida)", expanded=True):
@@ -1907,6 +2018,19 @@ with st.expander("🌐 Legacy - Expandida (Mid + Small Caps)", expanded=True):
         adicionar_botao_copiar(df_sorted, label="🌐 Legacy - Expandida (Mid + Small Caps)", vol_ratio=min_vol_ratio, adx_min=adx_min, rsi_min=rsi_min, rsi_max=rsi_max, usa_sliders=False)
     else:
         st.info("Nenhum ativo encontrado com os filtros da versão Expandida.")
+
+
+# Painel de falhas de aquisição — base para blacklist e diagnóstico por ativo.
+with st.expander("⚠️ Ativos com falha de dados (potencial blacklist)", expanded=False):
+    _falhas = data_layer.list_failures()
+    if _falhas is None or _falhas.empty:
+        st.caption("Nenhuma falha registrada — todos os ativos foram baixados com sucesso.")
+    else:
+        st.caption(
+            f"{len(_falhas)} (symbol, interval) com falha persistente de download. "
+            "Ordene por fail_count para identificar candidatos a blacklist."
+        )
+        st.dataframe(_falhas, use_container_width=True, hide_index=True)
 
 st.markdown("---")
 st.caption(f"Última atualização: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}")

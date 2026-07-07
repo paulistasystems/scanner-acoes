@@ -10,3 +10,8 @@ dist/
 build/
 Legacy Scanner é claramente superior**.md
 log
+
+# SQLite do data_layer (artefato de runtime)
+scanner.db
+scanner.db-shm
+scanner.db-wal
