@@ -52,10 +52,15 @@ ADX_RISING_PERIODS = 5
 # Definido no escopo do módulo (e não dentro do corpo do script) para estar
 # sempre disponível no callback on_change do radio de perfil, que executa
 # ANTES do corpo do script a cada rerun.
-SCANNER_CACHE_KEYS = [
-    'df_fusion', 'df_hibrido', 'df_rr', 'df_pro', 'df_exp',
-    'df_legacy_prof', 'df_legacy_intra', 'df_legacy_exp',
-]
+#
+# Os caches são separados por FAMÍLIA para garantir independência total entre
+# os scanners Evolved (dependem do perfil/seletores) e os Legacy (filtros
+# hardcoded). Trocar de perfil ou clicar em "Atualizar Scanners" invalida só
+# os Evolved; o botão "Atualizar Legacy" invalida só os Legacy. Assim o
+# resultado de uma família nunca é perturbado pela outra.
+EVOLVED_CACHE_KEYS = ['df_fusion', 'df_hibrido', 'df_rr', 'df_pro', 'df_exp']
+LEGACY_CACHE_KEYS = ['df_legacy_prof', 'df_legacy_intra', 'df_legacy_exp']
+SCANNER_CACHE_KEYS = EVOLVED_CACHE_KEYS + LEGACY_CACHE_KEYS  # init na carga da página
 
 # ===================== LISTAS POR CATEGORIA (BUSCA UNIVERSAL) =====================
 
@@ -1239,11 +1244,12 @@ st.markdown("---")
 st.subheader("⚙️ Painel de Controle Global")
 
 # Radio fora do form para atualização imediata da legenda.
-def _limpar_caches_ao_trocar_perfil():
-    """Invalida os caches dos scanners ao trocar de perfil, para que os
-    resultados sejam recalculados imediatamente com os novos filtros —
-    mantém a legenda e os dados sempre em sincronia."""
-    for key in SCANNER_CACHE_KEYS:
+def _limpar_caches_evolved():
+    """Invalida APENAS os caches dos scanners Evolved ao trocar de perfil,
+    para que sejam recalculados imediatamente com os novos filtros.
+    Os scanners Legacy são intocados: seus filtros são hardcoded e
+    independentes dos seletores, portanto não devem mudar ao trocar de perfil."""
+    for key in EVOLVED_CACHE_KEYS:
         st.session_state[key] = None
 
 
@@ -1254,7 +1260,7 @@ perfil_selecionado = st.radio(
     index=profile_names.index(DEFAULT_PROFILE),
     horizontal=True,
     help="Selecione um perfil predefinido ou Personalizado para ajustar manualmente",
-    on_change=_limpar_caches_ao_trocar_perfil,
+    on_change=_limpar_caches_evolved,
 )
 
 # Mostrar legenda do perfil selecionado fora do form (atualiza imediatamente)
@@ -1388,9 +1394,11 @@ for key in SCANNER_CACHE_KEYS:
     if key not in st.session_state:
         st.session_state[key] = None
 
-# Quando o form é submetido, limpar cache dos scanners E cache de dados para forçar recálculo
+# Botão "Atualizar Scanners": invalida APENAS os caches Evolved (+ cache de
+# dados para forçar snapshot fresco). Os scanners Legacy NÃO são afetados —
+# têm seu próprio botão de refresh no painel Legacy.
 if rodar_todos:
-    for key in SCANNER_CACHE_KEYS:
+    for key in EVOLVED_CACHE_KEYS:
         st.session_state[key] = None
     # Limpar cache do yfinance para baixar dados frescos
     baixar_dados.clear()
@@ -1749,11 +1757,24 @@ st.markdown("---")
 st.markdown("## 📚 LEGACY - VERSÕES ANTIGAS (COMPARAÇÃO)")
 st.caption(f"Compare os resultados dos scanners evoluídos com as versões antigas/legadas | {len(ativos_global)} ativos ({lista_global})")
 
+# Botão de refresh INDEPENDENTE dos scanners Legacy. Invalida APENAS os caches
+# Legacy (+ baixar_dados para snapshot fresco) — não afeta os scanners Evolved,
+# que só rodam ao trocar de perfil/seletores ou no botão "Atualizar Scanners".
+rodar_legacy = st.button(
+    "📚 Atualizar Legacy",
+    type="secondary",
+    help="Recalcula apenas os scanners Legacy com dados frescos. Independente dos seletores de perfil.",
+)
+if rodar_legacy:
+    for key in LEGACY_CACHE_KEYS:
+        st.session_state[key] = None
+    baixar_dados.clear()
+
 # Legacy Scanner 1: Profissional
 with st.expander("🔮 Legacy - Profissional (Final Corrigida)", expanded=True):
     st.caption(f"Multi-timeframe: Daily + 1H + 30M | Filtros: Vol>1.5x, EMA20/50, ADX>20, RSI 45-75 | {len(ativos_global)} ativos ({lista_global})")
 
-    if rodar_todos or st.session_state['df_legacy_prof'] is None:
+    if rodar_legacy or st.session_state['df_legacy_prof'] is None:
         with st.spinner("Analisando Legacy Profissional..."):
             st.session_state['df_legacy_prof'] = legacy_profissional(ativos_global)
 
@@ -1800,7 +1821,7 @@ with st.expander("🔮 Legacy - Profissional (Final Corrigida)", expanded=True):
 with st.expander("⏰ Legacy - Intraday/Swing Curto Prazo", expanded=True):
     st.caption(f"Filtros rigorosos: Vol>1.7x, Liquidez>8M, ADX≥22, RSI 47-73 | Score ponderado: Daily×1.6 + 1H + 30M | {len(ativos_global)} ativos ({lista_global})")
 
-    if rodar_todos or st.session_state['df_legacy_intra'] is None:
+    if rodar_legacy or st.session_state['df_legacy_intra'] is None:
         with st.spinner("Analisando Legacy Intraday/Swing..."):
             st.session_state['df_legacy_intra'] = legacy_intraday_swing(ativos_global)
 
@@ -1844,7 +1865,7 @@ with st.expander("⏰ Legacy - Intraday/Swing Curto Prazo", expanded=True):
 with st.expander("🌐 Legacy - Expandida (Mid + Small Caps)", expanded=True):
     st.caption(f"Vol médio relaxado (≥2.5M) | Confluência multi-TF detalhada | {len(ativos_global)} ativos ({lista_global})")
 
-    if rodar_todos or st.session_state['df_legacy_exp'] is None:
+    if rodar_legacy or st.session_state['df_legacy_exp'] is None:
         with st.spinner("Analisando Legacy Expandida..."):
             st.session_state['df_legacy_exp'] = legacy_expandida(ativos_global)
 
