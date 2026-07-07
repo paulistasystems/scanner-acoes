@@ -15,3 +15,10 @@ log
 scanner.db
 scanner.db-shm
 scanner.db-wal
+
+# Logs/transcrições de sessão (artefatos de runtime) — requirements.txt segue versionado
+*.txt
+!requirements.txt
+
+# Próprio .gitignore
+.gitignore
