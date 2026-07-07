@@ -2031,5 +2031,172 @@ with st.expander("⚠️ Ativos com falha de dados (potencial blacklist)", expan
         )
         st.dataframe(_falhas, use_container_width=True, hide_index=True)
 
+
+# ===================== Painel: teste de download — símbolos delistados =====================
+# Painel de diagnóstico ao final da página. Lista todos os símbolos removidos do
+# scanner (delistados/ausentes no Yahoo — ver DELISTED_SYMBOLS.md) com o link do
+# Yahoo para inspeção manual, e um teste de download SOMENTE LEITURA (yf.download
+# direto, sem passar pelo data_layer → não escreve no banco nem no fill_state nem
+# altera o universo ativo) que re-verifica se algum ativo voltou a responder
+# (relançamento, ticker restabelecido, fim de throttling) e poderia ser reativado.
+_SIMBOLOS_DELISTADOS = [
+    # (symbol, nome, categoria) — fonte: DELISTED_SYMBOLS.md
+    # 2026-07-07 — falha persistente de download (empty/truncated)
+    ("NEOE3.SA",  "Neoenergia",      "Ações — Energia"),
+    ("IRDM11.SA", "FII Iridium",     "FII"),
+    ("RBRF11.SA", "FII RB Capital",  "FII"),
+    # Confirmados delistados/ausentes no Yahoo (verificação 2026-07-04)
+    ("BPAN4.SA",  "Banco Pan",       "Bancos"),
+    ("CIEL3.SA",  "Cielo",           "Serviços Financeiros"),
+    ("IRBR3.SA",  "IRB Brasil",      "Seguros"),
+    ("AZUL4.SA",  "Azul",            "Aéreas"),
+    ("GOLL4.SA",  "Gol",             "Aéreas"),
+    ("ELET3.SA",  "Elektro",         "Energia"),
+    ("ELET6.SA",  "Eletrobras",      "Energia"),
+    ("AESB3.SA",  "AES Sul",         "Energia"),
+    ("TRPL4.SA",  "Transmissão",     "Energia"),
+    ("CCRO3.SA",  "CCR",             "Logística"),
+    ("STBP3.SA",  "Wilson Sons",     "Industrial"),
+    ("SQIA3.SA",  "Sinqia",          "Tecnologia"),
+    ("GEOO41.SA", "Geo",             "Industrial"),
+    ("ARZZ3.SA",  "Arezzo",          "Varejo"),
+    ("SOMA3.SA",  "Grupo Soma",      "Varejo"),
+    ("PETZ3.SA",  "Petz",            "Varejo"),
+    ("NTCO3.SA",  "Natura &Co",      "Consumo"),
+    ("META34.SA", "Meta",            "BDR Tech"),
+    ("P1LT34.SA", "Palantir",        "BDR Tech"),
+    ("A1XP34.SA", "Adobe",           "BDR Tech"),
+    ("COST34.SA", "Costco",          "BDR Consumo"),
+    ("INTC34.SA", "Intel",           "BDR Tech"),
+    ("MAST34.SA", "Mastercard",      "BDR Finanças"),
+    ("C1RM34.SA", "Ciena",           "BDR Tech"),
+    ("BOING34.SA","Boeing",          "BDR Industrial"),
+    ("S1NO34.SA", "Sony",            "BDR Tech"),
+    ("A1MG34.SA", "Abbott",          "BDR Saúde"),
+    ("BCFF11.SA", "FII BC FF",       "FII"),
+    ("SHOT11.SA", "ETF SHOT",        "ETF"),
+    ("MALL11.SA", "FII MALL",        "FII"),
+    ("EURP11.SA", "ETF Europa",      "ETF"),
+    ("RRRP3.SA",  "3R Petroleum",    "Petróleo"),
+]
+
+
+def _testar_download_delistados(periodo="1mo", intervalo="1d", progress=None):
+    """Teste de download SOMENTE LEITURA dos símbolos delistados via yfinance.
+    Não usa o data_layer (não toca no banco/fill_state/universo ativo) — é um
+    diagnóstico puro de "este ticker voltou a responder?". Retorna lista de dicts
+    com symbol/nome/categoria/status/bars/erro/link. `progress(done,tot,symbol,ok)`
+    é opcional para barra de progresso da UI."""
+    total = len(_SIMBOLOS_DELISTADOS)
+    resultados = []
+    for idx, (symbol, nome, categoria) in enumerate(_SIMBOLOS_DELISTADOS):
+        bars, erro = 0, ""
+        try:
+            df = yf.download(symbol, interval=intervalo, period=periodo,
+                             progress=False, auto_adjust=True)
+            # yfinance recente devolve MultiIndex (price, ticker) num único ticker
+            if isinstance(df.columns, pd.MultiIndex):
+                df = df.droplevel(1, axis=1)
+            if df is not None and not df.empty:
+                bars = len(df)
+            else:
+                erro = "empty/truncated response"
+        except Exception as e:  # diagnóstico — captura qualquer erro de rede/API
+            erro = repr(e)
+        resultados.append({
+            "symbol": symbol,
+            "nome": nome,
+            "categoria": categoria,
+            "status": "✅ Online" if bars else "❌ Ainda falha",
+            "bars": bars,
+            "erro": erro,
+            "link": f"https://finance.yahoo.com/quote/{symbol}",
+        })
+        if progress is not None:
+            progress(idx + 1, total, symbol, bool(bars))
+    return resultados
+
+
+with st.expander("🧪 Teste de download — símbolos delistados/ausentes", expanded=False):
+    st.caption(
+        f"{len(_SIMBOLOS_DELISTADOS)} símbolos removidos do scanner (ver "
+        "`DELISTED_SYMBOLS.md`). Cada linha tem o link do Yahoo para inspeção "
+        "manual. O teste de download (somente leitura — não afeta o banco nem o "
+        "universo ativo) re-verifica se algum ativo voltou a responder e pode ser "
+        "reativado."
+    )
+
+    # Controles + gatilho do teste
+    _cc1, _cc2 = st.columns([1, 2])
+    _periodo = _cc1.selectbox(
+        "Período do teste (intervalo 1d)", ["5d", "1mo", "3mo", "6mo", "1y"], index=1
+    )
+    if _cc2.button("▶️ Testar download de todos", type="primary"):
+        _barra = st.progress(0.0)
+        _texto = st.empty()
+        _texto.text(f"Testando (0/{len(_SIMBOLOS_DELISTADOS)})…")
+        def _cb(done, tot, symbol, ok):
+            _barra.progress(done / tot if tot else 1.0)
+            _texto.text(f"Testando {done}/{tot} — {symbol} {'✓' if ok else '✗'}")
+        try:
+            st.session_state["_delist_teste"] = _testar_download_delistados(
+                periodo=_periodo, intervalo="1d", progress=_cb
+            )
+        finally:
+            _barra.empty()
+            _texto.empty()
+
+    # Tabela: links do Yahoo sempre presentes; status/barras só depois do teste.
+    _teste = st.session_state.get("_delist_teste")
+    if _teste:
+        _df_t = pd.DataFrame(_teste)
+        _online = int((_df_t["status"] == "✅ Online").sum())
+        _m1, _m2, _m3 = st.columns(3)
+        _m1.metric("Símbolos testados", len(_df_t))
+        _m2.metric("✅ Online", _online)
+        _m3.metric("❌ Ainda falham", len(_df_t) - _online)
+        if _online:
+            _reativar = ", ".join(_df_t.loc[_df_t["status"] == "✅ Online", "symbol"].tolist())
+            st.success(
+                f"{_online} símbolo(s) voltou(voltaram) a responder: {_reativar}. "
+                "Avalie reativar no universo do scanner."
+            )
+        # Online primeiro (destaca os que voltaram), depois por símbolo.
+        _df_show = _df_t.copy()
+        _df_show["_ok"] = _df_show["status"] != "✅ Online"
+        _df_show = _df_show.sort_values(["_ok", "symbol"]).drop(columns=["_ok"])
+        st.dataframe(
+            _df_show,
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "symbol": st.column_config.TextColumn("Símbolo"),
+                "nome": st.column_config.TextColumn("Nome"),
+                "categoria": st.column_config.TextColumn("Categoria"),
+                "status": st.column_config.TextColumn("Status"),
+                "bars": st.column_config.NumberColumn("Barras", format="%d"),
+                "erro": st.column_config.TextColumn("Erro"),
+                "link": st.column_config.LinkColumn("Yahoo Finance", display_text="🔗 Abrir"),
+            },
+        )
+    else:
+        _df_links = pd.DataFrame(
+            [{"symbol": s, "nome": n, "categoria": c,
+              "link": f"https://finance.yahoo.com/quote/{s}"}
+             for s, n, c in _SIMBOLOS_DELISTADOS]
+        )
+        st.caption("Clique em **🔗 Abrir** para abrir o ativo no Yahoo Finance.")
+        st.dataframe(
+            _df_links,
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "symbol": st.column_config.TextColumn("Símbolo"),
+                "nome": st.column_config.TextColumn("Nome"),
+                "categoria": st.column_config.TextColumn("Categoria"),
+                "link": st.column_config.LinkColumn("Yahoo Finance", display_text="🔗 Abrir"),
+            },
+        )
+
 st.markdown("---")
 st.caption(f"Última atualização: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}")
