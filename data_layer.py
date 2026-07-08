@@ -378,6 +378,77 @@ def list_failures():
     )
 
 
+def db_path():
+    """Caminho absoluto do banco em uso (respeita SCANNER_DB)."""
+    return _DB_PATH
+
+
+def db_summary():
+    """Estatísticas agregadas do banco para o painel de inspeção: contagens por
+    tabela, contagem de candles por intervalo, símbolos distintos e janela
+    temporal (min/max ts). Tudo em uma única travada do lock."""
+    _ensure_schema()
+    conn = _connect()
+    with _lock:
+        out = {
+            "bars": conn.execute("SELECT COUNT(*) FROM bars").fetchone()[0],
+            "fill_state": conn.execute("SELECT COUNT(*) FROM fill_state").fetchone()[0],
+            "fetch_failures": conn.execute("SELECT COUNT(*) FROM fetch_failures").fetchone()[0],
+            "distinct_symbols": conn.execute("SELECT COUNT(DISTINCT symbol) FROM bars").fetchone()[0],
+            "by_interval": conn.execute(
+                "SELECT interval, COUNT(*) FROM bars GROUP BY interval ORDER BY interval"
+            ).fetchall(),
+            "ts_min": None,
+            "ts_max": None,
+        }
+        rng = conn.execute("SELECT MIN(ts), MAX(ts) FROM bars").fetchone()
+        out["ts_min"], out["ts_max"] = rng[0], rng[1]
+    return out
+
+
+def read_bars(symbol=None, interval=None, start=None, end=None, limit=None):
+    """Leitura SOMENTE LEITURA da tabela `bars` para o painel de inspeção.
+
+    Filtros opcionais por `symbol`, `interval` e janela de timestamp (`start`/`end`
+    em ISO8601 ou 'YYYY-MM-DD' — comparável como texto pois os ts são ISO8601).
+    `limit` (int) limita o número de linhas; None/0 = sem limite. Retorna DataFrame
+    ordenado por symbol, interval, ts. Não toca em fill_state nem aciona yfinance."""
+    _ensure_schema()
+    clauses, params = [], []
+    if symbol:
+        clauses.append("symbol=?"); params.append(symbol)
+    if interval:
+        clauses.append("interval=?"); params.append(interval)
+    if start:
+        clauses.append("ts>=?"); params.append(start)
+    if end:
+        clauses.append("ts<=?"); params.append(end)
+    where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
+    sql = ("SELECT symbol, interval, ts, open, high, low, close, volume "
+           "FROM bars" + where + " ORDER BY symbol, interval, ts")
+    if limit:
+        sql += " LIMIT ?"; params.append(int(limit))
+    with _lock:
+        rows = _connect().execute(sql, params).fetchall()
+    if not rows:
+        return pd.DataFrame()
+    return pd.DataFrame(rows, columns=["symbol", "interval", "ts", "open", "high", "low", "close", "volume"])
+
+
+def read_fill_state():
+    """Snapshot SOMENTE LEITURA da tabela fill_state: quais (symbol, interval)
+    já estão preenchidos e quando (last_filled_at)."""
+    _ensure_schema()
+    with _lock:
+        rows = _connect().execute(
+            "SELECT symbol, interval, last_filled_at FROM fill_state "
+            "ORDER BY symbol, interval"
+        ).fetchall()
+    if not rows:
+        return pd.DataFrame()
+    return pd.DataFrame(rows, columns=["symbol", "interval", "last_filled_at"])
+
+
 def prewarm(symbols, intervals, attempts=3, progress=None):
     """Passo de AQUISIÇÃO: garante que todos os (symbol, interval) estejam
     preenchidos no banco ANTES da análise. Faz retry com backoff e registra em
