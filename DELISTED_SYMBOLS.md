@@ -9,12 +9,12 @@
 ## 📊 SUMMARY
 
 - **✅ Symbol Changes Found:** 6 (updated in code)
-- **❌ Confirmed Delisted/Missing:** 31 symbols
+- **❌ Confirmed Delisted/Missing:** 29 symbols
 - **🔍 Verification Method:** Yahoo Finance search API + direct download testing
 
 ---
 
-## 🆕 DELISTED 2026-07-07 (3 symbols)
+## 🆕 DELISTED 2026-07-07 (2 symbols)
 
 Removidos do scanner após falhas consistentes de download no Yahoo Finance
 (`empty/truncated response` em todas as tentativas e intervalos, com `fail_count`
@@ -25,7 +25,6 @@ falhas da camada de dados SQLite (`data_layer.list_failures()`).
 |--------|-----------|-------------------|--------|
 | `NEOE3.SA` | Ações — Energia Elétrica | `UNIV_ENERGIA` (scanner_interface_Streamlit.py + scanner_abertura.py) | Neoenergia — empty/truncated (30m, 1h, 1d) |
 | `IRDM11.SA` | FII | `_FIIS_UNIVERSAL` / lista de FIIs (ambos os scanners) | FII Iridium — empty/truncated (30m, 1h) |
-| `RBRF11.SA` | FII | `_FIIS_UNIVERSAL` / lista de FIIs (ambos os scanners) | FII RB Capital — empty/truncated (30m, 1h) |
 
 > **Nota:** a camada de dados trata `empty/truncated response` como o sintoma de
 > oscilação/flicker do Yahoo (respostas limitadas/throttled), não necessariamente
@@ -49,15 +48,14 @@ These symbols have been successfully updated in `scanner_interface_Streamlit.py`
 
 ---
 
-## ❌ CONFIRMED DELISTED/MISSING SYMBOLS (31 symbols)
+## ❌ CONFIRMED DELISTED/MISSING SYMBOLS (29 symbols)
 
-### 🏢 BANKS & FINANCIAL SERVICES (3 symbols)
+### 🏢 BANKS & FINANCIAL SERVICES (2 symbols)
 
 | Symbol | Company | Category | Notes |
 |--------|---------|----------|-------|
 | `BPAN4.SA` | Banco Pan | Banks | Known operational issues |
 | `CIEL3.SA` | Cielo | Financial Services | Not found in Yahoo Finance |
-| `IRBR3.SA` | IRB Brasil | Insurance | Listed but may be delisted |
 
 ---
 
@@ -197,7 +195,6 @@ Remove these 31 symbols from the following lists in `scanner_interface_Streamlit
 ### 3. VERIFICATION NEEDED
 Some symbols may require additional verification:
 - **PETZ3.SA** - Search returns `AUAU3.SA` and `AUAU3F.SA` - verify correct symbol with broker
-- **IRBR3.SA** - May have liquidity issues or symbol change
 - **NTCO3.SA** - Nutriplant, verify if still traded
 
 ---
@@ -217,6 +214,7 @@ Some symbols may require additional verification:
 - **2026-07-04**: Updated 6 symbols with confirmed working replacements
 - **2026-07-04**: Documented 31 delisted/missing symbols
 - **2026-07-07**: Removidos 3 símbolos com falhas persistentes de download (`NEOE3.SA`, `IRDM11.SA`, `RBRF11.SA`) a partir do export de falhas do data_layer
+- **2026-07-07**: Relistados `IRBR3.SA` (UNIV_BANCOS) e `RBRF11.SA` (FIIS_B3 / `_FIIS_UNIVERSAL`) em ambos os scanners — download revalidado via yfinance (22 e 21 barras em 1d/1mo), tickers restabelecidos no Yahoo
 
 ---
 

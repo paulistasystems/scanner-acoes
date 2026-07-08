@@ -69,7 +69,7 @@ SCANNER_CACHE_KEYS = EVOLVED_CACHE_KEYS + LEGACY_CACHE_KEYS  # init na carga da 
 UNIV_BANCOS = [
     'ITUB4.SA', 'BBAS3.SA', 'BBDC4.SA', 'BBDC3.SA', 'SANB11.SA',
     'BPAC11.SA', 'ITSA4.SA', 'BBSE3.SA', 'PSSA3.SA', 'BRSR6.SA',
-    'ABCB4.SA', 'BMGB4.SA',
+    'ABCB4.SA', 'BMGB4.SA', 'IRBR3.SA',
 ]
 
 # Ações - Energia Elétrica
@@ -205,7 +205,7 @@ FIIS_B3 = [
     'KNRI11.SA', 'PVBI11.SA', 'JSRE11.SA', 'BRCR11.SA', 'RCRB11.SA',
     # Papel (CRI / CRA)
     'MXRF11.SA', 'CPTS11.SA', 'RBRR11.SA', 'RECR11.SA',
-    'VGIP11.SA', 'KNCR11.SA', 'HGCR11.SA',
+    'VGIP11.SA', 'KNCR11.SA', 'HGCR11.SA', 'RBRF11.SA',
     # Híbridos / Diversificados
     'HGBS11.SA', 'ALZR11.SA', 'TRXF11.SA', 'TGAR11.SA',
 ]
@@ -2044,11 +2044,9 @@ _SIMBOLOS_DELISTADOS = [
     # 2026-07-07 — falha persistente de download (empty/truncated)
     ("NEOE3.SA",  "Neoenergia",      "Ações — Energia"),
     ("IRDM11.SA", "FII Iridium",     "FII"),
-    ("RBRF11.SA", "FII RB Capital",  "FII"),
     # Confirmados delistados/ausentes no Yahoo (verificação 2026-07-04)
     ("BPAN4.SA",  "Banco Pan",       "Bancos"),
     ("CIEL3.SA",  "Cielo",           "Serviços Financeiros"),
-    ("IRBR3.SA",  "IRB Brasil",      "Seguros"),
     ("AZUL4.SA",  "Azul",            "Aéreas"),
     ("GOLL4.SA",  "Gol",             "Aéreas"),
     ("ELET3.SA",  "Elektro",         "Energia"),
