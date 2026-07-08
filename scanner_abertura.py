@@ -89,8 +89,9 @@ def coletar_candidatos(ativos, min_ratio, max_ratio):
     passam no filtro de estabilização (Decay Ratio) e na tendência de alta.
 
     Usa os limites mais permissivos (perfil Agressivo: RVOL >= 0.8 e Vol >= R$ 300 mil)
-    apenas para reunir todos os candidatos possíveis. A filtragem fina por perfil de
-    risco fica a cargo de `filtrar_por_perfil`, evitando baixar os mesmos dados 3x."""
+    apenas para reunir todos os candidatos possíveis. A classificação por perfil de
+    risco (cascata Conservador > Moderado > Agressivo) fica a cargo de
+    `classificar_perfil`, evitando baixar os mesmos dados 3x."""
     hoje = data_layer.session_today()
     if hoje is None:
         return pd.DataFrame()   # fim de semana — sem pregão para analisar hoje
@@ -215,14 +216,24 @@ def coletar_candidatos(ativos, min_ratio, max_ratio):
     return pd.DataFrame(resultados)
 
 
-def filtrar_por_perfil(df, min_vol, min_rvol):
-    """Filtra o DataFrame de candidatos pelos limites de um perfil de risco.
-    `min_vol` vem em R$ e a coluna está em R$ Mi, por isso a conversão."""
+def classificar_perfil(df, perfis):
+    """Atribui cada ativo ao perfil MAIS restritivo que ele atende (cascata).
+    Conservador > Moderado > Agressivo. Cada ativo recebe exatamente um perfil,
+    eliminando a repetição entre blocos. `min_vol` vem em R$ e a coluna está em
+    R$ Mi, por isso a conversão."""
     if df.empty:
         return df
-    mask = (df['Volume Ratio (RVOL)'] >= min_rvol) & \
-           (df['Vol Financeiro C1 (R$ Mi)'] >= min_vol / 1_000_000)
-    return df[mask].sort_values(by="Volume Ratio (RVOL)", ascending=False).reset_index(drop=True)
+    df = df.copy()
+
+    def qual(row):
+        for p in perfis:  # perfis ordenado do mais restritivo ao mais brandoso
+            if (row['Volume Ratio (RVOL)'] >= p['min_rvol'] and
+                    row['Vol Financeiro C1 (R$ Mi)'] >= p['min_vol'] / 1_000_000):
+                return p['nome']
+        return None  # não atende nem ao Agressivo (candidato coletado só pelo floor de RVOL)
+
+    df['perfil'] = df.apply(qual, axis=1)
+    return df
 
 
 # ===================== PERFIS DE RISCO =====================
@@ -264,6 +275,7 @@ st.sidebar.info(
 # ===================== EXECUÇÃO AUTOMÁTICA (PAGE LOAD) =====================
 with st.spinner(f"Analisando confirmações de swing trade em {len(ATIVOS_B3_AMPLIADO)} ativos..."):
     df_todos = coletar_candidatos(ATIVOS_B3_AMPLIADO, min_ratio, max_ratio)
+    df_todos = classificar_perfil(df_todos, PERFIS)
 
 if df_todos.empty:
     if data_layer.session_today() is None:
@@ -284,7 +296,10 @@ else:
 
     # Resultados em blocos empilhados (um por perfil), tudo na mesma página — sem abas.
     for perfil in PERFIS:
-        df_perfil = filtrar_por_perfil(df_todos, perfil["min_vol"], perfil["min_rvol"])
+        df_perfil = df_todos[df_todos['perfil'] == perfil['nome']] \
+            .drop(columns='perfil') \
+            .sort_values(by='Volume Ratio (RVOL)', ascending=False) \
+            .reset_index(drop=True)
         st.subheader(perfil["nome"])
         st.caption(perfil["desc"])
         if df_perfil.empty:
