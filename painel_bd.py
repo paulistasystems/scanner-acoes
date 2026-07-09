@@ -78,7 +78,8 @@ def render_db_panel():
 
             # Sem opção "0 = ilimitado": carregar a tabela bars inteira (~35 MB)
             # trava a aplicação. O limite é sempre um valor positivo.
-            limit = st.slider("Limite de linhas", 50, 5000, 50, step=50, key="pbd_limit")
+            # Passo de 10 em 10, default 50 — granularidade fina para inspeção.
+            limit = st.slider("Limite de linhas", 50, 5000, 50, step=10, key="pbd_limit")
 
             df_bars = data_layer.read_bars(
                 symbol=symbol.strip() or None,
