@@ -14,6 +14,7 @@ import yfinance as yf
 import pandas_ta as ta
 from datetime import datetime
 import data_layer
+import painel_bd
 
 # Page config
 st.set_page_config(page_title="Scanner Ações BR", layout="wide", page_icon="📈")
@@ -2197,4 +2198,12 @@ with st.expander("🧪 Teste de download — símbolos delistados/ausentes", exp
         )
 
 st.markdown("---")
+
+# ===================== Painel: inspeção do banco de dados (somente leitura) =====================
+# Embutido no MESMO app disparado por run.sh para compartilhar filesystem/banco com
+# os scanners. Essencial no deploy: no Streamlit Cloud cada app tem seu próprio
+# container/filesystem efêmero, então um painel como app separado veria um scanner.db
+# vazio. Aqui, no mesmo processo, o painel enxerga exatamente o que os scanners
+# acabaram de preencher.
+painel_bd.render_db_panel()
 st.caption(f"Última atualização: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}")

@@ -10,6 +10,7 @@ import yfinance as yf
 import pandas_ta as ta
 from datetime import datetime
 import data_layer
+import painel_bd
 
 # ===================== LISTAS POR CATEGORIA (BUSCA UNIVERSAL) =====================
 UNIV_BANCOS = ['ITUB4.SA', 'BBAS3.SA', 'BBDC4.SA', 'BBDC3.SA', 'SANB11.SA', 'BPAC11.SA', 'ITSA4.SA', 'BBSE3.SA', 'PSSA3.SA', 'BRSR6.SA', 'ABCB4.SA', 'BMGB4.SA', 'IRBR3.SA']
@@ -320,3 +321,11 @@ else:
         st.markdown("##### Lista para copiar (ProfitChart):")
         st.code(lista_str, language="text")
         st.divider()
+
+# ===================== Painel: inspeção do banco de dados (somente leitura) =====================
+# Embutido no MESMO app disparado por run_abertura.sh para compartilhar
+# filesystem/banco com o scanner. No deploy (Streamlit Cloud: cada app tem seu
+# próprio container/filesystem efêmero), um painel como app separado veria um
+# scanner.db vazio; aqui, no mesmo processo, ele enxerga o que o scanner acabou
+# de preencher.
+painel_bd.render_db_panel()
