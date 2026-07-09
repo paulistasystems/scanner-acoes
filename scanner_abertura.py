@@ -49,6 +49,13 @@ st.set_page_config(page_title="Scanner de Abertura", layout="wide", page_icon="�
 st.title("🌅 SCANNER DE ABERTURA - ESTABILIZAÇÃO (15M)")
 st.markdown("Analisa o **volume do primeiro candle (10:00)** vs **candle das 10:15** para encontrar ativos em estabilização após gap/euforia inicial. Ideal para ser rodado a partir das 10:30.")
 
+# ===================== Painel: inspeção do banco de dados (somente leitura) =====================
+# Renderizado no TOPO (logo após o título) para ficar SEMPRE visível: o Streamlit
+# executa o script topo → base, então se o painel ficasse ao final ele só apareceria
+# depois que o scanner terminasse de processar. Aqui aparece imediatamente, antes do
+# scan (expander recolhido + carga só ao clicar = baixo impacto).
+painel_bd.render_db_panel()
+
 # ===================== FUNÇÕES =====================
 def baixar_dados_15m(symbol):
     """Candles 15m via banco SQLite (data_layer). yfinance só preenche dados ausentes."""
@@ -498,13 +505,3 @@ else:
     lista_conf = ",".join(df_conf['Ativo'].tolist())
     st.markdown("##### Lista para copiar (ProfitChart):")
     st.code(lista_conf, language="text")
-
-st.divider()
-
-# ===================== Painel: inspeção do banco de dados (somente leitura) =====================
-# Embutido no MESMO app disparado por run_abertura.sh para compartilhar
-# filesystem/banco com o scanner. No deploy (Streamlit Cloud: cada app tem seu
-# próprio container/filesystem efêmero), um painel como app separado veria um
-# scanner.db vazio; aqui, no mesmo processo, ele enxerga o que o scanner acabou
-# de preencher.
-painel_bd.render_db_panel()

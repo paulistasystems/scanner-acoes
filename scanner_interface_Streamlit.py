@@ -20,6 +20,16 @@ import painel_bd
 st.set_page_config(page_title="Scanner Ações BR", layout="wide", page_icon="📈")
 st.title("📈 SCANNER CONSOLIDADO DE AÇÕES - BRASIL")
 
+# ===================== Painel: inspeção do banco de dados (somente leitura) =====================
+# Renderizado no TOPO (logo após o título) para ficar SEMPRE visível: o Streamlit
+# executa o script topo → base, então se o painel ficasse ao final ele só apareceria
+# depois que TODOS os scanners terminassem de processar. Aqui aparece imediatamente,
+# antes de qualquer scan (expander recolhido + carga só ao clicar = baixo impacto).
+# Embutido no MESMO app disparado por run.sh para compartilhar filesystem/banco com
+# os scanners (no Streamlit Cloud cada app tem container/filesystem próprio — um
+# painel como app separado veria um scanner.db vazio).
+painel_bd.render_db_panel()
+
 # ===================== PERFIS DE ANÁLISE =====================
 PROFILES = {
     "🛡️ Conservador": {
@@ -2198,12 +2208,4 @@ with st.expander("🧪 Teste de download — símbolos delistados/ausentes", exp
         )
 
 st.markdown("---")
-
-# ===================== Painel: inspeção do banco de dados (somente leitura) =====================
-# Embutido no MESMO app disparado por run.sh para compartilhar filesystem/banco com
-# os scanners. Essencial no deploy: no Streamlit Cloud cada app tem seu próprio
-# container/filesystem efêmero, então um painel como app separado veria um scanner.db
-# vazio. Aqui, no mesmo processo, o painel enxerga exatamente o que os scanners
-# acabaram de preencher.
-painel_bd.render_db_panel()
 st.caption(f"Última atualização: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}")

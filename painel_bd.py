@@ -76,14 +76,16 @@ def render_db_panel():
             start = datas[0].isoformat() if len(datas) >= 1 else None
             end = datas[1].isoformat() if len(datas) >= 2 else None
 
-            limit = st.slider("Limite de linhas (0 = sem limite)", 0, 5000, 1000, step=500, key="pbd_limit")
+            # Sem opção "0 = ilimitado": carregar a tabela bars inteira (~35 MB)
+            # trava a aplicação. O limite é sempre um valor positivo.
+            limit = st.slider("Limite de linhas", 50, 5000, 50, step=50, key="pbd_limit")
 
             df_bars = data_layer.read_bars(
                 symbol=symbol.strip() or None,
                 interval=interval or None,
                 start=start,
                 end=end,
-                limit=limit or None,
+                limit=limit,
             )
             if df_bars.empty:
                 st.info("Nenhum candle para os filtros informados (ou banco ainda vazio — rode um scanner primeiro).")
