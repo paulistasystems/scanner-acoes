@@ -8,7 +8,6 @@ import streamlit as st
 import pandas as pd
 import yfinance as yf
 import pandas_ta as ta
-from datetime import datetime
 import data_layer
 import painel_bd
 
@@ -54,6 +53,13 @@ st.markdown("Analisa o **volume do primeiro candle (10:00)** vs **candle das 10:
 def baixar_dados_15m(symbol):
     """Candles 15m via banco SQLite (data_layer). yfinance só preenche dados ausentes."""
     return data_layer.get_bars(symbol, "15m", "5d")
+
+
+def baixar_dados_30m(symbol):
+    """Candles 30m via banco SQLite (data_layer). yfinance só preenche dados ausentes.
+
+    Usado pelo bloco de confluência 30M+15M (confirmação de vela de alta)."""
+    return data_layer.get_bars(symbol, "30m", "15d")
 
 
 def _prewarm_com_progresso(ativos, intervals, rotulo="Baixando dados"):
@@ -237,6 +243,126 @@ def classificar_perfil(df, perfis):
     return df
 
 
+# ===================== CONFLUÊNCIA 30M + 15M (vela de alta forte + volume) =====================
+def _e_vela_alta_forte(vela):
+    """Vela de alta FORTE: verde (close > open) E fecha no terço superior do próprio
+    range ((close-low) >= 0.67*(high-low)) — pouca sombra superior, corpo dominante,
+    compradores no controle."""
+    if vela is None:
+        return False
+    o, h, l, c = vela['Open'], vela['High'], vela['Low'], vela['Close']
+    if pd.isna(o) or pd.isna(c) or pd.isna(h) or pd.isna(l):
+        return False
+    if c <= o:
+        return False
+    rng = h - l
+    if rng <= 0:
+        return False
+    return (c - l) >= 0.67 * rng
+
+
+def _rvol_na_vela(df, vela):
+    """RVOL da VELA DE ABERTURA: volume da vela / média-20 do candle imediatamente
+    ANTERIOR (linha de volume 'normal' pré-abertura). Mesma convenção do scan de
+    estabilização: a média NÃO inclui o pico da abertura, então o RVOL reflete quantas
+    vezes maior é o volume de abertura vs. o volume normal."""
+    if vela is None:
+        return 0.0
+    try:
+        vol_media = df['Volume'].rolling(20).mean()
+        pos = df.index.get_loc(vela.name)
+        if pos <= 0:
+            return 0.0
+        media = float(vol_media.iloc[pos - 1])
+        return float(vela['Volume']) / media if media > 0 else 0.0
+    except Exception:
+        return 0.0
+
+
+def _tendencia_30m(df_30m):
+    """Tendência no 30m (INFORMATIVA — não é filtro): close vs EMA20."""
+    try:
+        close = float(df_30m['Close'].iloc[-1])
+        ema20 = float(ta.ema(df_30m['Close'], length=20).iloc[-1])
+        return "✅ Alta" if close > ema20 else "❌ Baixa"
+    except Exception:
+        return "—"
+
+
+def coletar_confluencia_15m_30m(ativos, rvol_min):
+    """Detecta ativos cuja PRIMEIRA vela do dia — a de ABERTURA (10:00) — é de alta FORTE
+    em AMBOS os timeframes (15m E 30m), com confirmação de VOLUME (RVOL >= rvol_min) na
+    vela de abertura de cada timeframe. Confluência multi-timeframe de compradores na
+    abertura. A âncora é a vela de abertura (mesmo helper do scan de estabilização), NÃO
+    a última vela fechada — apenas detecta e confirma o movimento (sem plano de posição)."""
+    hoje = data_layer.session_today()
+    if hoje is None:
+        return pd.DataFrame()  # fim de semana — sem pregão para analisar hoje
+
+    resultados = []
+    progresso_texto = st.empty()
+    barra_progresso = st.progress(0)
+
+    _prewarm_com_progresso(ativos, ['15m', '30m'])
+
+    total = len(ativos)
+    for i, symbol in enumerate(ativos):
+        progresso_texto.text(f"Confluência 15m/30m: {symbol} ({i+1}/{total})...")
+        barra_progresso.progress((i + 1) / total)
+        try:
+            df_15m = baixar_dados_15m(symbol)
+            df_30m = baixar_dados_30m(symbol)
+            if df_15m is None or df_15m.empty or len(df_15m) < 25:
+                continue
+            if df_30m is None or df_30m.empty or len(df_30m) < 25:
+                continue
+
+            # Estritamente o pregão de HOJE
+            df_hoje_15m = df_15m[df_15m.index.date == hoje]
+            df_hoje_30m = df_30m[df_30m.index.date == hoje]
+
+            # Vela de ABERTURA de hoje (10:00) — primeira vela do dia — travada no horário
+            # real da B3 (robusto a gaps/leilão), mesmo helper do scan de estabilização.
+            abertura_15 = _candle_por_hora(df_hoje_15m, 10, 0)
+            abertura_30 = _candle_por_hora(df_hoje_30m, 10, 0)
+            if abertura_15 is None or abertura_30 is None:
+                continue  # pregão cedo demais: ainda não chegou o candle das 10:00
+
+            # Gatilho: vela de abertura de alta forte nos DOIS timeframes
+            if not (_e_vela_alta_forte(abertura_15) and _e_vela_alta_forte(abertura_30)):
+                continue
+
+            # Confirmação de volume (RVOL) na vela de abertura de cada timeframe
+            rvol15 = _rvol_na_vela(df_15m, abertura_15)
+            rvol30 = _rvol_na_vela(df_30m, abertura_30)
+            if rvol15 < rvol_min or rvol30 < rvol_min:
+                continue
+
+            preco = float(df_hoje_15m['Close'].iloc[-1])  # preço atual do dia
+
+            def _fech_pct(v):
+                rng = v['High'] - v['Low']
+                return round((v['Close'] - v['Low']) / rng * 100, 1) if rng > 0 else 0.0
+
+            resultados.append({
+                'Ativo': symbol.replace('.SA', ''),
+                'Preço': round(preco, 2),
+                'Confirmação': "30m ✅ / 15m ✅",
+                'RVOL 30m': round(rvol30, 2),
+                'RVOL 15m': round(rvol15, 2),
+                'Fech. 30m (%)': _fech_pct(abertura_30),
+                'Fech. 15m (%)': _fech_pct(abertura_15),
+                'Var. Abertura 30m (%)': round((abertura_30['Close'] - abertura_30['Open']) / abertura_30['Open'] * 100, 2),
+                'Tendência 30m': _tendencia_30m(df_30m),
+            })
+        except Exception:
+            continue
+
+    progresso_texto.empty()
+    barra_progresso.empty()
+    return pd.DataFrame(resultados)
+
+
 # ===================== PERFIS DE RISCO =====================
 # O scanner roda automaticamente no carregamento da página (sem seleção de perfil)
 # e exibe os resultados já separados por cada perfil de risco abaixo.
@@ -266,6 +392,13 @@ st.sidebar.header("Decay Ratio (Estabilização)")
 st.sidebar.markdown("Após a explosão inicial, o volume precisa acalmar para uma entrada segura.")
 max_ratio = st.sidebar.slider("Máximo Ratio", 0.1, 1.0, 0.60, 0.05)
 min_ratio = st.sidebar.slider("Mínimo Ratio", 0.0, 0.5, 0.10, 0.05)
+
+st.sidebar.markdown("---")
+st.sidebar.header("Confluência 30M + 15M")
+st.sidebar.markdown(
+    "Vela de abertura (10:00) de alta forte nos dois timeframes + confirmação de volume."
+)
+rvol_min = st.sidebar.slider("RVOL mínimo (volume)", 0.5, 3.0, 1.0, 0.1)
 
 st.sidebar.markdown("---")
 st.sidebar.info(
@@ -321,6 +454,52 @@ else:
         st.markdown("##### Lista para copiar (ProfitChart):")
         st.code(lista_str, language="text")
         st.divider()
+
+# ===================== Bloco: Confluência 30M + 15M (vela de alta forte + volume) =====================
+st.header("📈 CONFLUÊNCIA 30M + 15M — Vela de abertura (10:00) de alta")
+st.markdown(
+    f"Lista ativos cuja **primeira vela do dia (abertura 10:00)** é de **alta forte** em "
+    f"**ambos os timeframes** (15m E 30m) **com confirmação de volume** "
+    f"(RVOL ≥ {rvol_min:.1f}x na vela de abertura de cada timeframe). Confluência "
+    "multi-timeframe de compradores logo na abertura — gatilho conservador de entrada."
+)
+
+with st.spinner(f"Buscando vela de alta forte + volume em {len(ATIVOS_B3_AMPLIADO)} ativos..."):
+    df_conf = coletar_confluencia_15m_30m(ATIVOS_B3_AMPLIADO, rvol_min)
+
+if df_conf.empty:
+    if data_layer.session_today() is None:
+        st.warning("Hoje não há pregão na B3 (fim de semana). Rode em dia útil, a partir das 10:30.")
+    else:
+        st.info(
+            f"Nenhum ativo com vela de ABERTURA (10:00) de alta forte em 15m E 30m com "
+            f"volume ≥ {rvol_min:.1f}x hoje. Rode a partir das 10:30 (quando fecha a vela de 30m)."
+        )
+else:
+    st.success(f"{len(df_conf)} ativo(s) em confluência 15m + 30m.")
+    df_conf = df_conf.sort_values(by='RVOL 30m', ascending=False).reset_index(drop=True)
+
+    col_config_conf = {
+        'Preço': st.column_config.NumberColumn(format="R$ %.2f"),
+        'RVOL 30m': st.column_config.NumberColumn(format="%.2fx"),
+        'RVOL 15m': st.column_config.NumberColumn(format="%.2fx"),
+        'Fech. 30m (%)': st.column_config.NumberColumn(format="%.0f %%"),
+        'Fech. 15m (%)': st.column_config.NumberColumn(format="%.0f %%"),
+        'Var. Abertura 30m (%)': st.column_config.NumberColumn(format="%.2f %%"),
+    }
+    st.dataframe(df_conf, width=1100, hide_index=True, column_config=col_config_conf)
+    st.caption(
+        "Tudo medido na vela de ABERTURA (10:00) de hoje. Fech. (%) = posição do fechamento "
+        "no range da vela (≥ 67% = forte, compradores no controle). RVOL = volume da vela de "
+        "abertura / média de 20 períodos do candle anterior. Tendência 30m é informativa "
+        "(close vs EMA20). Recomendado rodar a partir das 10:30 (quando fecha a vela de 30m)."
+    )
+
+    lista_conf = ",".join(df_conf['Ativo'].tolist())
+    st.markdown("##### Lista para copiar (ProfitChart):")
+    st.code(lista_conf, language="text")
+
+st.divider()
 
 # ===================== Painel: inspeção do banco de dados (somente leitura) =====================
 # Embutido no MESMO app disparado por run_abertura.sh para compartilhar
