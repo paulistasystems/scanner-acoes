@@ -25,13 +25,11 @@ removed from Yahoo.
 ```
 venv313/bin/streamlit run scanner_interface_Streamlit.py   # 8 scanners (Legacy + Evolved)
 venv313/bin/streamlit run scanner_abertura.py               # 15m opening scanner
-venv313/bin/streamlit run painel_bd.py                      # read-only DB browser (bars/fill_state/fetch_failures)
 ```
 
 `scanner_interface_Streamlit.py` has 8 scanners (Legacy + Evolved), each triggered from
 the UI; `scanner_abertura.py` auto-runs its 15m scan on render. Both scanner apps embed
 a **read-only** DB panel (`painel_bd.render_db_panel()`) at the bottom — see below.
-`painel_bd.py` is also runnable standalone for local use.
 
 ## Architecture: data layer (`data_layer.py`)
 
@@ -55,8 +53,7 @@ that throttled/truncated Yahoo responses used to cause.
   (bars/fill_state/fetch_failures). It is **embedded at the bottom of both scanner
   apps**, not deployed as a separate app — on Streamlit Cloud each app runs in its own
   ephemeral container/filesystem, so a standalone panel app would see an empty DB.
-  Embedding it shares the scanner's process/DB. `painel_bd.py` can still run standalone
-  for local inspection (shared filesystem).
+  `painel_bd.py` is a library module imported by both apps (not a standalone app).
 - All scanners share one `bars` table across 1d/1h/30m/15m; lookback depth varies per
   scanner and is resolved by storing max depth and slicing on read.
 - **DB location**: `scanner.db` next to the script by default; override via the

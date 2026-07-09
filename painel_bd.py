@@ -1,24 +1,21 @@
 # -*- coding: utf-8 -*-
 """
-painel_bd.py — Painel de inspeção do banco de dados (SQLite) do scanner.
+painel_bd.py — Módulo do painel de inspeção do banco de dados (SQLite) do scanner.
 
-Expõe TODOS os dados persistidos em scanner.db (bars/fill_state/fetch_failures)
-em uma visualização Streamlit SOMENTE LEITURA (não aciona yfinance, não escreve,
-não invalida).
+Biblioteca importada pelos apps de scanner (scanner_interface_Streamlit.py e
+scanner_abertura.py) — NÃO é um app standalone. Expõe render_db_panel(), que
+apresenta TODOS os dados persistidos em scanner.db (bars/fill_state/fetch_failures)
+em uma visualização SOMENTE LEITURA (não aciona yfinance, não escreve, não invalida).
 
-USO (dois modos):
-  1. Embutido no app principal (recomendado, inclusive no deploy) — compartilha o
-     MESMO processo/banco do scanner. No Streamlit Cloud cada app roda num
-     container/filesystem próprio, então um painel implantado como app separado
-     veria um scanner.db VAZIO. Embutido no app disparado por run.sh, o painel
-     enxerga exatamente o banco que os scanners acabaram de preencher:
+Por que embutido (e não um app separado): no Streamlit Cloud cada app roda num
+container/filesystem próprio, então um painel implantado como app separado veria um
+scanner.db VAZIO. Embutido nos apps disparados por run.sh / run_abertura.sh, o painel
+compartilha o MESMO processo/banco do scanner — enxerga o que ele acabou de preencher.
 
-         import painel_bd
-         painel_bd.render_db_panel()
+Uso (a partir de um app de scanner):
 
-  2. Standalone (somente local — filesystem compartilhado entre os apps):
-
-         venv313/bin/streamlit run painel_bd.py
+    import painel_bd
+    painel_bd.render_db_panel()
 """
 
 import streamlit as st
@@ -132,12 +129,3 @@ def render_db_panel():
                     mime="text/csv",
                     key="pbd_dl_fail",
                 )
-
-
-if __name__ == "__main__":
-    # Execução standalone (somente local — compartilha filesystem com os scanners).
-    # Quando importado pelo app principal, este bloco NÃO roda (__name__ != "__main__"),
-    # evitando chamadas duplicadas de set_page_config/title.
-    st.set_page_config(page_title="Painel do Banco", layout="wide", page_icon="🗄️")
-    st.title("🗄️ PAINEL DO BANCO DE DADOS")
-    render_db_panel()
