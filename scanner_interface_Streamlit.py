@@ -15,9 +15,12 @@ import pandas_ta as ta
 from datetime import datetime
 import data_layer
 import painel_bd
+import symbol_store
+import symbols_fallback
 
 # Page config
 st.set_page_config(page_title="Scanner Ações BR", layout="wide", page_icon="📈")
+symbol_store.bridge_streamlit_secrets()  # st.secrets → os.environ (Cloud); local usa .env
 st.title("📈 SCANNER CONSOLIDADO DE AÇÕES - BRASIL")
 
 # ===================== Painel: inspeção do banco de dados (somente leitura) =====================
@@ -74,174 +77,22 @@ EVOLVED_CACHE_KEYS = ['df_fusion', 'df_hibrido', 'df_rr', 'df_pro', 'df_exp']
 LEGACY_CACHE_KEYS = ['df_legacy_prof', 'df_legacy_intra', 'df_legacy_exp']
 SCANNER_CACHE_KEYS = EVOLVED_CACHE_KEYS + LEGACY_CACHE_KEYS  # init na carga da página
 
-# ===================== LISTAS POR CATEGORIA (BUSCA UNIVERSAL) =====================
-
-# Ações - Bancos / Financeiras / Seguros
-UNIV_BANCOS = [
-    'ITUB4.SA', 'BBAS3.SA', 'BBDC4.SA', 'BBDC3.SA', 'SANB11.SA',
-    'BPAC11.SA', 'ITSA4.SA', 'BBSE3.SA', 'PSSA3.SA', 'BRSR6.SA',
-    'ABCB4.SA', 'BMGB4.SA', 'IRBR3.SA',
-]
-
-# Ações - Energia Elétrica
-UNIV_ENERGIA = [
-    'EQTL3.SA', 'CMIG4.SA', 'CPFE3.SA',
-    'ENGI11.SA', 'CPLE3.SA', 'AURE3.SA', 'TAEE11.SA',
-    'EGIE3.SA', 'COCE5.SA', 'ENEV3.SA',
-    'CSMG3.SA', 'SBSP3.SA', 'SAPR11.SA',
-]
-
-# Ações - Petróleo / Gás / Distribuição
-UNIV_PETROLEO = [
-    'PETR4.SA', 'PETR3.SA', 'PRIO3.SA', 'CSAN3.SA', 'UGPA3.SA',
-    'VBBR3.SA', 'RECV3.SA', 'RAIZ4.SA',
-]
-
-# Ações - Mineração / Siderurgia / Metalurgia
-UNIV_MINERACAO = [
-    'VALE3.SA', 'GGBR4.SA', 'GGBR3.SA', 'GOAU4.SA', 'USIM5.SA',
-    'CSNA3.SA', 'CMIN3.SA', 'FESA4.SA', 'BRKM5.SA', 'UNIP6.SA',
-]
-
-# Ações - Varejo / Consumo
-UNIV_VAREJO = [
-    'LREN3.SA', 'MGLU3.SA', 'GRND3.SA', 'ALPA4.SA', 'CEAB3.SA',
-    'RIAA3.SA', 'LJQQ3.SA', 'BHIA3.SA', 'AMAR3.SA', 'VULC3.SA',
-]
-
-# Ações - Saúde / Farmacêutica
-UNIV_SAUDE = [
-    'HAPV3.SA', 'RDOR3.SA', 'FLRY3.SA', 'HYPE3.SA', 'RADL3.SA',
-    'ONCO3.SA', 'BLAU3.SA', 'AALR3.SA',
-]
-
-# Ações - Imobiliário / Construção
-UNIV_IMOBILIARIO = [
-    'MRVE3.SA', 'CYRE3.SA', 'EVEN3.SA', 'EZTC3.SA', 'DIRR3.SA',
-    'TEND3.SA', 'LAVV3.SA', 'TRIS3.SA', 'MDNE3.SA', 'CURY3.SA',
-    'PLPL3.SA', 'MELK3.SA', 'MTRE3.SA', 'GFSA3.SA',
-]
-
-# Ações - Alimentos / Agro / Bebidas
-UNIV_ALIMENTOS = [
-    'ABEV3.SA', 'JBSS32.SA', 'BRFT11.SA', 'MBRF3.SA', 'BEEF3.SA',
-    'MDIA3.SA', 'SMTO3.SA', 'SLCE3.SA', 'AGRO3.SA', 'CAML3.SA',
-    'JALL3.SA',
-]
-
-# Ações - Transportes / Logística / Aéreas
-UNIV_TRANSPORTES = [
-    'ECOR3.SA', 'EMBJ3.SA',
-    'RAIL3.SA', 'TGMA3.SA', 'HBSA3.SA', 'LOGN3.SA',
-]
-
-# Ações - Telecom / Tecnologia
-UNIV_TECH = [
-    'VIVT3.SA', 'TIMS3.SA', 'TOTS3.SA', 'LWSA3.SA', 'POSI3.SA',
-    'INTB3.SA', 'CASH3.SA', 'BMOB3.SA', 'MLAS3.SA',
-    'DESK3.SA', 'SEQL3.SA',
-]
-
-# Ações - Industrial / Bens de Capital
-UNIV_INDUSTRIAL = [
-    'WEGE3.SA', 'B3SA3.SA', 'RENT3.SA', 'VAMO3.SA', 'SIMH3.SA',
-    'KEPL3.SA', 'TUPY3.SA', 'POMO4.SA', 'RAPT4.SA', 'LEVE3.SA',
-    'MILS3.SA', 'WIZC3.SA', 'MULT3.SA', 'IGTI11.SA',
-]
-
-# Ações - Papel / Celulose
-UNIV_PAPEL = [
-    'KLBN11.SA', 'SUZB3.SA', 'DXCO3.SA',
-]
-
-# Ações - Educação
-UNIV_EDUCACAO = [
-    'COGN3.SA', 'YDUQ3.SA', 'ANIM3.SA', 'SEER3.SA',
-]
-
-# ===================== BDRs (Brazilian Depositary Receipts) =====================
-
-# BDRs - Tecnologia
-BDR_TECH = [
-    'AAPL34.SA', 'MSFT34.SA', 'AMZO34.SA', 'GOGL34.SA', 'NVDC34.SA',
-    'TSLA34.SA', 'NFLX34.SA', 'ADBE34.SA', 'ORCL34.SA',
-    'CSCO34.SA', 'AVGO34.SA', 'QCOM34.SA', 'A1MD34.SA',
-    'PYPL34.SA', 'U1BE34.SA', 'S1PO34.SA',
-]
-
-# BDRs - Finanças
-BDR_FINANCAS = [
-    'JPMC34.SA', 'BOAC34.SA', 'GSGI34.SA', 'MSBR34.SA', 'BERK34.SA',
-    'VISA34.SA',
-]
-
-# BDRs - Consumo / Varejo
-BDR_CONSUMO = [
-    'COCA34.SA', 'PEPB34.SA', 'MCDC34.SA', 'NIKE34.SA', 'SBUB34.SA',
-    'PGCO34.SA', 'WALM34.SA', 'HOME34.SA', 'DISB34.SA',
-]
-
-# BDRs - Saúde / Farma
-BDR_SAUDE = [
-    'JNJB34.SA', 'PFIZ34.SA', 'MRCK34.SA', 'ABBV34.SA', 'LILY34.SA',
-]
-
-# BDRs - Industrial / Energia / Outros
-BDR_INDUSTRIAL = [
-    'CATP34.SA', 'HONB34.SA', 'MMMC34.SA',
-    'EXXO34.SA', 'CHVX34.SA', 'DHER34.SA',
-]
-
-# ===================== ETFs =====================
-ETFS_B3 = [
-    # Índices Brasil
-    'BOVA11.SA', 'BOVV11.SA', 'SMAL11.SA', 'XBOV11.SA', 'DIVO11.SA',
-    'MATB11.SA', 'FIND11.SA', 'GOVE11.SA', 'PIBB11.SA',
-    # Índices Internacionais
-    'IVVB11.SA', 'SPXI11.SA', 'NASD11.SA',
-    # Temáticos / Setoriais
-    'HASH11.SA', 'QBTC11.SA', 'ETHE11.SA', 'GOLD11.SA',
-    'TECK11.SA', 'JURO11.SA',
-    # Renda Fixa
-    'IMAB11.SA', 'IRFM11.SA', 'B5P211.SA', 'FIXA11.SA',
-]
-
-# ===================== FIIs (Fundos Imobiliários) =====================
-FIIS_B3 = [
-    # Logístico
-    'HGLG11.SA', 'BTLG11.SA', 'XPLG11.SA', 'VILG11.SA', 'BRCO11.SA',
-    # Shopping / Varejo
-    'XPML11.SA', 'VISC11.SA', 'HSML11.SA',
-    # Lajes Corporativas
-    'KNRI11.SA', 'PVBI11.SA', 'JSRE11.SA', 'BRCR11.SA', 'RCRB11.SA',
-    # Papel (CRI / CRA)
-    'MXRF11.SA', 'CPTS11.SA', 'RBRR11.SA', 'RECR11.SA',
-    'VGIP11.SA', 'KNCR11.SA', 'HGCR11.SA', 'RBRF11.SA',
-    # Híbridos / Diversificados
-    'HGBS11.SA', 'ALZR11.SA', 'TRXF11.SA', 'TGAR11.SA',
-]
-
-# ===================== LISTA MASTER COMBINADA =====================
-_ACOES_UNIVERSAL = (
-    UNIV_BANCOS + UNIV_ENERGIA + UNIV_PETROLEO + UNIV_MINERACAO +
-    UNIV_VAREJO + UNIV_SAUDE + UNIV_IMOBILIARIO + UNIV_ALIMENTOS +
-    UNIV_TRANSPORTES + UNIV_TECH + UNIV_INDUSTRIAL + UNIV_PAPEL + UNIV_EDUCACAO
+# ===================== UNIVERSO DE ATIVOS (fonte: Supabase via symbol_store) =====================
+# Universo único e compartilhado entre os scanners (acabou a duplicação manual). O catálogo
+# vive no Supabase; `symbols_fallback` é o fallback bundled + seed inicial. Detalhes em
+# ROADMAP.md → "Supabase — Gestão dinâmica de símbolos".
+from symbols_fallback import (
+    UNIV_BANCOS, UNIV_ENERGIA, UNIV_PETROLEO, UNIV_MINERACAO, UNIV_VAREJO,
+    UNIV_SAUDE, UNIV_IMOBILIARIO, UNIV_ALIMENTOS, UNIV_TRANSPORTES, UNIV_TECH,
+    UNIV_INDUSTRIAL, UNIV_PAPEL, UNIV_EDUCACAO,
+    BDR_TECH, BDR_FINANCAS, BDR_CONSUMO, BDR_SAUDE, BDR_INDUSTRIAL,
+    ETFS_B3, FIIS_B3,
+    _ACOES_UNIVERSAL, _BDRS_UNIVERSAL, _ETFS_UNIVERSAL, _FIIS_UNIVERSAL,
+    ATIVOS_B3_AMPLIADO, CONTAGEM_CATEGORIAS,
 )
-_BDRS_UNIVERSAL = BDR_TECH + BDR_FINANCAS + BDR_CONSUMO + BDR_SAUDE + BDR_INDUSTRIAL
-_ETFS_UNIVERSAL = ETFS_B3
-_FIIS_UNIVERSAL = FIIS_B3
-
-ATIVOS_B3_AMPLIADO = list(set(
-    _ACOES_UNIVERSAL + _BDRS_UNIVERSAL + _ETFS_UNIVERSAL + _FIIS_UNIVERSAL
-))
-
-# Contadores por categoria (para exibição na interface)
-CONTAGEM_CATEGORIAS = {
-    'Ações': len(set(_ACOES_UNIVERSAL)),
-    'BDRs': len(set(_BDRS_UNIVERSAL)),
-    'ETFs': len(set(_ETFS_UNIVERSAL)),
-    'FIIs': len(set(_FIIS_UNIVERSAL)),
-}
+# Universo ATIVO vem do Supabase (status='listed'); cai no fallback bundled se o Supabase
+# estiver indisponível. Reatribuir o MESMO nome mantém todos os call sites (~22) intactos.
+ATIVOS_B3_AMPLIADO = symbol_store.load_universe() or list(ATIVOS_B3_AMPLIADO)
 
 
 # ===================== FUNÇÕES UTILITÁRIAS =====================
@@ -1275,6 +1126,1021 @@ def scanner_swing_trade_fusion(ativos, adx_min, rsi_min, rsi_max, vol_ratio_min,
 
 
 # ===================== INTERFACE =====================
+st.markdown("---")
+st.subheader("⚙️ Painel de Controle Global")
+
+# Radio fora do form para atualização imediata da legenda.
+def _limpar_caches_evolved():
+    """Invalida APENAS os caches dos scanners Evolved ao trocar de perfil,
+    para que sejam recalculados imediatamente com os novos filtros.
+    Os scanners Legacy são intocados: seus filtros são hardcoded e
+    independentes dos seletores, portanto não devem mudar ao trocar de perfil."""
+    for key in EVOLVED_CACHE_KEYS:
+        st.session_state[key] = None
+
+
+profile_names = list(PROFILES.keys()) + ["🎛️ Personalizado"]
+perfil_selecionado = st.radio(
+    "🎯 Perfil de Análise",
+    profile_names,
+    index=profile_names.index(DEFAULT_PROFILE),
+    horizontal=True,
+    help="Selecione um perfil predefinido ou Personalizado para ajustar manualmente",
+    on_change=_limpar_caches_evolved,
+)
+
+# Mostrar legenda do perfil selecionado fora do form (atualiza imediatamente)
+if perfil_selecionado in PROFILES:
+    p = PROFILES[perfil_selecionado]
+    st.info(f"**{perfil_selecionado}** — {p['desc']}  \n"
+            f"📊 Vol ≥ {p['vol_ratio']}x | 💧 Liquidez ≥ {p['vol_medio_min']/1_000_000:.1f}M | "
+            f"📈 ADX ≥ {p['adx_min']} | "
+            f"⬇️ RSI ≥ {p['rsi_min']} | ⬆️ RSI ≤ {p['rsi_max']}")
+    # Set values for use in form
+    min_vol_ratio = p["vol_ratio"]
+    vol_medio_min = p["vol_medio_min"]
+    adx_min = p["adx_min"]
+    rsi_min = p["rsi_min"]
+    rsi_max = p["rsi_max"]
+
+# Usar st.form para os sliders e botão de submit
+# Só o botão de submit (Atualizar Scanners) dispara o rerun pesado
+with st.form("painel_controle"):
+    if perfil_selecionado == "🎛️ Personalizado":
+        # Personalizado: mostrar sliders
+        col_vol, col_liq, col_adx, col_rsi_min, col_rsi_max = st.columns(5)
+        with col_vol:
+            min_vol_ratio = st.slider(
+                "📊 Volume Ratio Mínimo",
+                min_value=0.5,
+                max_value=3.0,
+                value=PROFILES[DEFAULT_PROFILE]["vol_ratio"],
+                step=0.1,
+                help="Ratio mínimo entre volume atual e média de 20 períodos"
+            )
+        with col_liq:
+            vol_medio_min = st.slider(
+                "💧 Liquidez Mínima (M)",
+                min_value=0.1,
+                max_value=10.0,
+                value=PROFILES[DEFAULT_PROFILE]["vol_medio_min"] / 1_000_000,
+                step=0.1,
+                help="Volume médio diário mínimo (em milhões). Guarda de liquidez."
+            ) * 1_000_000
+        with col_adx:
+            adx_min = st.slider(
+                "📈 ADX Mínimo",
+                min_value=15,
+                max_value=35,
+                value=PROFILES[DEFAULT_PROFILE]["adx_min"],
+                step=1,
+                help="Força mínima da tendência (ADX). Valores > 25 indicam tendência forte"
+            )
+        with col_rsi_min:
+            rsi_min = st.slider(
+                "⬇️ RSI Mínimo",
+                min_value=40,
+                max_value=60,
+                value=PROFILES[DEFAULT_PROFILE]["rsi_min"],
+                step=1,
+                help="RSI mínimo para considerar momentum de alta"
+            )
+        with col_rsi_max:
+            rsi_max = st.slider(
+                "⬆️ RSI Máximo",
+                min_value=60,
+                max_value=80,
+                value=PROFILES[DEFAULT_PROFILE]["rsi_max"],
+                step=1,
+                help="RSI máximo antes de sobrecompra"
+            )
+
+    # Botão de submit do form — único gatilho de rerun pesado
+    rodar_todos = st.form_submit_button("🔄 Atualizar Scanners", type="primary", width='stretch')
+
+# Usar sempre a lista universal completa
+ativos_global = ATIVOS_B3_AMPLIADO
+lista_global = "Universal"
+
+# ===================== LEGENDA =====================
+with st.expander("📖 Legenda dos Indicadores", expanded=True):
+    col_leg1, col_leg2, col_leg3 = st.columns(3)
+    with col_leg1:
+        st.markdown("""
+        **Indicadores Técnicos:**
+        - **ADX**: Força da tendência (> 25 = forte)
+        - **ADX Rising**: ADX crescendo vs 5 períodos atrás
+        - **+DI / -DI**: Direção da tendência (+DI > -DI = alta)
+        """)
+    with col_leg2:
+        st.markdown("""
+        **Zonas de RSI:**
+        - **< 40**: Sobrevendido
+        - **52-70**: Zona ideal de momentum
+        - **> 75**: Sobrecomprado
+        """)
+    with col_leg3:
+        st.markdown("""
+        **Tríade (ADX + RSI + Volume):**
+        - ✅ **Completa**: Todos na zona ideal
+        - ⚠️ **Parcial**: Pelo menos um fora
+
+        **Sinais de Saída:**
+        - ⚠️ ADX↓: ADX caindo (perda de força)
+        - ⚠️ RSI↑: RSI acima do máximo
+        - ✅: Sem alertas
+        """)
+
+# ===================== ATIVOS EM USO =====================
+with st.expander(f"📋 Ativos em uso — {len(ativos_global)} ativos", expanded=True):
+    col_u1, col_u2 = st.columns(2)
+
+    with col_u1:
+        st.markdown(f"**🔍 Universo completo ({len(ATIVOS_B3_AMPLIADO)} ativos):**")
+        for cat, qtd in CONTAGEM_CATEGORIAS.items():
+            st.markdown(f"- {cat}: **{qtd}**")
+
+    with col_u2:
+        st.warning("⚠️ Analisando **todos** os ativos cadastrados. O scan pode demorar vários minutos.")
+
+    # Lista completa de todos os símbolos divididos por categoria
+    with st.expander("📝 Ver todos os símbolos"):
+        categorized_symbols = {
+            'Ações': sorted(list(set([s.replace('.SA', '') for s in _ACOES_UNIVERSAL]))),
+            'BDRs': sorted(list(set([s.replace('.SA', '') for s in _BDRS_UNIVERSAL]))),
+            'ETFs': sorted(list(set([s.replace('.SA', '') for s in _ETFS_UNIVERSAL]))),
+            'FIIs': sorted(list(set([s.replace('.SA', '') for s in _FIIS_UNIVERSAL]))),
+        }
+        for cat, symbols in categorized_symbols.items():
+            with st.expander(f"📦 {cat} ({len(symbols)})", expanded=False):
+                st.markdown(", ".join([f"`{s}`" for s in symbols]))
+
+# ===================== CONTROLE DE ESTADO =====================
+for key in SCANNER_CACHE_KEYS:
+    if key not in st.session_state:
+        st.session_state[key] = None
+
+# Botão "Atualizar Scanners": invalida APENAS os caches Evolved (+ cache de
+# dados para forçar snapshot fresco). Os scanners Legacy NÃO são afetados —
+# têm seu próprio botão de refresh no painel Legacy.
+if rodar_todos:
+    for key in EVOLVED_CACHE_KEYS:
+        st.session_state[key] = None
+    # Limpar cache do yfinance para baixar dados frescos
+    data_layer.invalidate()
+
+st.markdown("---")
+
+
+# ===================== DISPLAY HELPERS =====================
+def mostrar_resumo_triade(df_resultado):
+    """Mostra resumo da Tríade no topo do scanner."""
+    if df_resultado is None or df_resultado.empty:
+        return
+    if 'Tríade' not in df_resultado.columns:
+        return
+    total = len(df_resultado)
+    completas = len(df_resultado[df_resultado['Tríade'] == '✅ Completa'])
+    parciais = total - completas
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("Total Ativos", total)
+    with col2:
+        st.metric("Tríade ✅ Completa", completas)
+    with col3:
+        st.metric("Tríade ⚠️ Parcial", parciais)
+
+
+def exibir_dataframe_colorido(df_resultado):
+    """Exibe DataFrame com configuração de colunas e cores."""
+    if df_resultado is None or df_resultado.empty:
+        st.info("Nenhum ativo encontrado com os filtros atuais.")
+        return
+
+    # Ordenar por Score descendente
+    df_resultado = df_resultado.sort_values('Score', ascending=False).reset_index(drop=True)
+
+    # Column config para melhor visualização
+    column_config = {
+        'Preço': st.column_config.NumberColumn('Preço (R$)', format="R$ %.2f"),
+        'Vol Ratio': st.column_config.NumberColumn('Vol Ratio', format="%.2f"),
+        'RSI': st.column_config.NumberColumn('RSI', format="%.1f"),
+        'ADX': st.column_config.NumberColumn('ADX', format="%.1f"),
+        '+DI': st.column_config.NumberColumn('+DI', format="%.1f"),
+        '-DI': st.column_config.NumberColumn('-DI', format="%.1f"),
+        'Score': st.column_config.ProgressColumn(
+            'Score',
+            min_value=0,
+            max_value=110,
+            format="%d",
+        ),
+    }
+
+    # Adicionar configs para colunas RR se existirem
+    if 'Stop' in df_resultado.columns:
+        column_config['Stop'] = st.column_config.NumberColumn('Stop (R$)', format="R$ %.2f")
+        column_config['Alvo 1:2'] = st.column_config.NumberColumn('Alvo 1:2 (R$)', format="R$ %.2f")
+        column_config['Alvo 1:3'] = st.column_config.NumberColumn('Alvo 1:3 (R$)', format="R$ %.2f")
+        column_config['RR'] = st.column_config.NumberColumn('RR', format="%.1f")
+
+    st.dataframe(
+        df_resultado,
+        width='stretch',
+        hide_index=True,
+        column_config=column_config,
+    )
+
+    st.success(f"{len(df_resultado)} ativos encontrados")
+
+
+# ===================== HELPER: COPY TO CLIPBOARD =====================
+def formatar_dataframe_para_texto(df):
+    """Converte DataFrame em texto linear (uma linha por ativo, chave: valor)."""
+    if df is None or df.empty:
+        return "Não há setups de compra válidos no momento."
+
+    cols = df.columns.tolist()
+    linhas = []
+    for _, row in df.iterrows():
+        pares = []
+        for col in cols:
+            val = row[col]
+            if pd.isna(val):
+                val_str = "N/A"
+            elif isinstance(val, float):
+                val_str = f"{val:.2f}"
+            else:
+                val_str = str(val)
+            pares.append(f"{col}: {val_str}")
+        linhas.append(" | ".join(pares))
+
+    return "\n".join(linhas)
+
+
+# ===================== HELPER: EXPORTAR MARKDOWN (.md) =====================
+def df_para_markdown(df):
+    """Converte DataFrame em tabela markdown (GitHub-flavored), sem dependências externas."""
+    if df is None or df.empty:
+        return "_Nenhum ativo encontrado com os filtros atuais._"
+
+    cols = df.columns.tolist()
+    cabecalho = "| " + " | ".join(str(c) for c in cols) + " |"
+    separador = "| " + " | ".join("---" for _ in cols) + " |"
+
+    linhas = []
+    for _, row in df.iterrows():
+        celulas = []
+        for col in cols:
+            val = row[col]
+            if pd.isna(val):
+                celulas.append("N/A")
+            elif isinstance(val, float):
+                celulas.append(f"{val:.2f}")
+            else:
+                # Escapa pipes e qubra de linha para não quebrar a tabela
+                celulas.append(str(val).replace("|", "\\|").replace("\n", " "))
+        linhas.append("| " + " | ".join(celulas) + " |")
+
+    return "\n".join([cabecalho, separador] + linhas)
+
+
+def gerar_markdown_relatorio(df, label="resultado", vol_ratio=1.6, adx_min=23, rsi_min=52, rsi_max=70, usa_sliders=True, perfil=""):
+    """Gera um relatório em markdown (.md) do resultado do scanner, pronto para download."""
+    if df is None or df.empty:
+        return f"# {label}\n\n_Nenhum ativo encontrado com os filtros atuais._\n"
+
+    df_md = df.copy()
+    if "Score" in df_md.columns:
+        df_md = df_md.sort_values("Score", ascending=False).reset_index(drop=True)
+
+    perfil_linha = f"\n**Perfil:** {perfil}" if perfil else ""
+    datahora = datetime.now().strftime("%d/%m/%Y %H:%M")
+
+    if usa_sliders:
+        filtros = (
+            f"- Volume Ratio Mínimo: {vol_ratio}\n"
+            f"- ADX Mínimo: {adx_min}\n"
+            f"- RSI Mínimo: {rsi_min}\n"
+            f"- RSI Máximo: {rsi_max}\n"
+        )
+    else:
+        filtros = "- Filtros internos próprios (configurações fixas incorporadas no scanner)\n"
+
+    tabela = df_para_markdown(df_md)
+
+    return (
+        f"# {label}\n\n"
+        f"**Gerado em:** {datahora}{perfil_linha}\n"
+        f"**Ativos encontrados:** {len(df_md)}\n\n"
+        f"## Filtros utilizados\n\n"
+        f"{filtros}\n"
+        f"## Resultados\n\n"
+        f"{tabela}\n"
+    )
+
+
+def adicionar_botao_download_md(df, label="resultado", vol_ratio=1.6, adx_min=23, rsi_min=52, rsi_max=70, usa_sliders=True, perfil=""):
+    """Adiciona um botão nativo para baixar o resultado do scanner como arquivo .md."""
+    if df is None or df.empty:
+        return
+
+    md = gerar_markdown_relatorio(
+        df, label=label, vol_ratio=vol_ratio, adx_min=adx_min,
+        rsi_min=rsi_min, rsi_max=rsi_max, usa_sliders=usa_sliders, perfil=perfil,
+    )
+
+    # Nome de arquivo seguro (apenas alfanuméricos, - e _)
+    nome_arquivo = "".join(c if (c.isalnum() or c in "-_") else "_" for c in label).strip("_")[:60]
+    if not nome_arquivo:
+        nome_arquivo = "scanner"
+
+    st.download_button(
+        label="📄 Baixar .md",
+        data=md.encode("utf-8"),
+        file_name=f"{nome_arquivo}.md",
+        mime="text/markdown",
+        help="Baixa um relatório em markdown com os resultados deste scanner.",
+    )
+
+
+def adicionar_botao_copiar(df, label="resultado", vol_ratio=1.6, adx_min=23, rsi_min=52, rsi_max=70, usa_sliders=True, perfil=""):
+    """Adiciona o botão para copiar a análise com o prompt do trader."""
+    if df is None or df.empty:
+        return
+
+    # Prompt do trader (incluído apenas no clipboard)
+    prompt_trader = """### Você é um trader profissional de Intraday e Swing curto prazo no mercado brasileiro.
+
+**Regras de Análise (obedeça rigorosamente):**
+- Timeframe principal: 1 hora
+- Timeframe auxiliar: 30 minutos
+- Estilo: Intraday ou Swing de 1 a 3 dias (posso carregar overnight)
+- Risco máximo por trade: 1% do capital
+- Risk:Reward mínimo obrigatório: **1:2**
+- **Só liste setups de COMPRA válidos** (nada de venda ou short)
+- Só recomende entrada se Score ≥ 65 e haja boa confluência entre 1h e 30m
+
+**Responda EXATAMENTE neste formato:**
+
+### ANÁLISE FINAL
+
+**Setups de Compra Válidos (em ordem de prioridade):**
+
+**XXXX** → **Score: XX/100**
+**Entrada Sugerida:** R$ XXXX
+**Stop Loss:** R$ XXXX (-X.X%)
+**Target 1:** R$ XXXX (+X.X% | R:R 1:2)
+**Target 2:** R$ XXXX (+X.X% | R:R 1:3)
+**Confluência 1h + 30m:**
+**Forças principais:**
+**Fraquezas / Riscos:**
+**Estratégia sugerida:**
+
+**Setups para Monitorar (sem confluência suficiente):**
+XXXX → Motivo breve
+
+**Resumo Geral:**
+**Viés do mercado hoje:**
+**Nível de risco do dia (Baixo / Médio / Alto):**
+**Melhor horário para entrada:**
+
+Seja objetivo, direto e conservador. Se não houver setups bons, diga claramente "Não há setups de compra válidos no momento."
+
+---
+
+**Dados do Scanner (cole aqui todo o output do scanner):**
+
+"""
+
+    # Converter DataFrame para formato textual linear
+    dados_textuais = formatar_dataframe_para_texto(df)
+
+    # Configuração dos filtros usados na análise
+    perfil_info = f"\n**Perfil:** {perfil}" if perfil else ""
+    if usa_sliders:
+        config_sliders = f"""
+
+---
+**Scanner:** {label}{perfil_info}
+
+**Configuração dos Filtros Utilizados:**
+• Volume Ratio Mínimo: {vol_ratio}
+• ADX Mínimo: {adx_min}
+• RSI Mínimo: {rsi_min}
+• RSI Máximo: {rsi_max}
+"""
+    else:
+        config_sliders = f"""
+
+---
+**Scanner:** {label}
+
+**Filtros:** Este scanner utiliza filtros internos próprios (configurações fixas incorporadas no scanner)
+"""
+
+    # Combinar prompt + dados + configuração
+    texto_completo = prompt_trader + dados_textuais + config_sliders
+
+    # Escapar para HTML seguro (textarea)
+    html_safe = texto_completo.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+    # ID único por botão
+    import hashlib
+    uid = "t" + hashlib.md5((label + str(id(df))).encode()).hexdigest()[:8]
+
+    copy_html = f"""
+    <style>
+        #copybtn{uid} {{
+            background: linear-gradient(135deg, #065f46, #10b981);
+            color: white; border: none; border-radius: 8px;
+            padding: 10px 20px; font-size: 15px; cursor: pointer;
+            font-family: sans-serif; font-weight: bold;
+            transition: all 0.2s ease;
+        }}
+        #copybtn{uid}:hover {{
+            background: linear-gradient(135deg, #10b981, #059669);
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(16,185,129,0.4);
+        }}
+    </style>
+    <textarea id="src{uid}" style="position:absolute;left:-9999px;top:0;width:1px;height:1px">{html_safe}</textarea>
+    <button id="copybtn{uid}">📋 Copiar Análise Completa</button>
+    <script>
+        const btn{uid} = document.getElementById('copybtn{uid}');
+        btn{uid}.addEventListener('click', function() {{
+            const ta = document.getElementById('src{uid}');
+            ta.style.position = 'static';
+            ta.style.left = '0';
+            ta.style.width = '100%';
+            ta.style.height = '200px';
+            ta.select();
+            ta.setSelectionRange(0, 99999);
+            let ok = false;
+            try {{ ok = document.execCommand('copy'); }} catch(e) {{ ok = false; }}
+            if (ok) {{
+                btn{uid}.innerText = '✅ Copiado!';
+                btn{uid}.style.background = 'linear-gradient(135deg, #064e3b, #059669)';
+                ta.style.position = 'absolute';
+                ta.style.left = '-9999px';
+                ta.style.width = '1px';
+                ta.style.height = '1px';
+                setTimeout(() => {{
+                    btn{uid}.innerText = '📋 Copiar Análise Completa';
+                    btn{uid}.style.background = 'linear-gradient(135deg, #065f46, #10b981)';
+                }}, 2500);
+            }} else {{
+                btn{uid}.innerText = 'Selecione e use Ctrl+C';
+                btn{uid}.style.background = '#dc2626';
+                ta.focus();
+            }}
+        }});
+    </script>
+    """
+    st.iframe(copy_html, height=55)
+
+
+# ===================== EXECUÇÃO DOS SCANNERS =====================
+
+def run_scanner(nome, funcao, key, descricao="", vol_ratio=1.6, adx_min=23, rsi_min=52, rsi_max=70, perfil=""):
+    """Executa e exibe um scanner dentro de um expander."""
+    with st.expander(nome, expanded=True):
+        if descricao:
+            st.caption(descricao)
+
+        if rodar_todos or st.session_state[key] is None:
+            with st.spinner(f"Analisando {nome}..."):
+                st.session_state[key] = funcao()
+
+        mostrar_resumo_triade(st.session_state[key])
+        exibir_dataframe_colorido(st.session_state[key])
+        if st.session_state[key] is not None and not st.session_state[key].empty:
+            adicionar_botao_copiar(st.session_state[key], label=nome, vol_ratio=vol_ratio, adx_min=adx_min, rsi_min=rsi_min, rsi_max=rsi_max, perfil=perfil)
+
+
+# Scanner 0: 🔥 Swing Trade Fusion (HERO SCANNER)
+with st.expander("🔥 Swing Trade Fusion — Best of Legacy + Evolved", expanded=True):
+    st.caption(f"Multi-TF completo (D+1H+30M) | Score ponderado (D×0.3 + 1H×0.4 + 30M×0.3) | Tríade + DI + ADX Rising + Stop/Alvos | {len(ativos_global)} ativos ({lista_global})")
+
+    if rodar_todos or st.session_state['df_fusion'] is None:
+        with st.spinner("Analisando Swing Trade Fusion..."):
+            st.session_state['df_fusion'] = scanner_swing_trade_fusion(ativos_global, adx_min, rsi_min, rsi_max, min_vol_ratio, vol_medio_min)
+
+    df_fusion = st.session_state['df_fusion']
+    if df_fusion is not None and not df_fusion.empty:
+        # Metrics row
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            st.metric("Total Ativos", len(df_fusion))
+        with col2:
+            excelentes = len(df_fusion[df_fusion['Confluência'] == 'Excelente ✅✅'])
+            st.metric("Confluência Excelente", excelentes)
+        with col3:
+            boas = len(df_fusion[df_fusion['Confluência'].isin(['Boa ✅', 'Excelente ✅✅'])])
+            st.metric("Confluência Boa+", boas)
+        with col4:
+            triade_full = len(df_fusion[(df_fusion['Tríade D'] == '✅') & (df_fusion['Tríade 1H'] == '✅')])
+            st.metric("Tríade D+1H ✅", triade_full)
+
+        # Sort by Score Total descending
+        df_sorted = df_fusion.sort_values('Score Total', ascending=False).reset_index(drop=True)
+
+        column_config_fusion = {
+            'Preço': st.column_config.NumberColumn('Preço (R$)', format="R$ %.2f"),
+            'Stop': st.column_config.NumberColumn('Stop (R$)', format="R$ %.2f"),
+            'Alvo 1:2': st.column_config.NumberColumn('Alvo 1:2 (R$)', format="R$ %.2f"),
+            'Alvo 1:3': st.column_config.NumberColumn('Alvo 1:3 (R$)', format="R$ %.2f"),
+            'Vol Ratio': st.column_config.NumberColumn('Vol Ratio', format="%.2f"),
+            'RSI D': st.column_config.NumberColumn('RSI D', format="%.1f"),
+            'RSI 1H': st.column_config.NumberColumn('RSI 1H', format="%.1f"),
+            'RSI 30M': st.column_config.NumberColumn('RSI 30M', format="%.1f"),
+            'ADX D': st.column_config.NumberColumn('ADX D', format="%.1f"),
+            'ADX 1H': st.column_config.NumberColumn('ADX 1H', format="%.1f"),
+            'ADX 30M': st.column_config.NumberColumn('ADX 30M', format="%.1f"),
+            '+DI': st.column_config.NumberColumn('+DI', format="%.1f"),
+            '-DI': st.column_config.NumberColumn('-DI', format="%.1f"),
+            'Score D': st.column_config.NumberColumn('Score D', format="%d"),
+            'Score 1H': st.column_config.NumberColumn('Score 1H', format="%d"),
+            'Score 30M': st.column_config.NumberColumn('Score 30M', format="%d"),
+            'Score Total': st.column_config.ProgressColumn(
+                'Score Total',
+                min_value=0,
+                max_value=100,
+                format="%d",
+            ),
+        }
+
+        st.dataframe(
+            df_sorted,
+            width='stretch',
+            hide_index=True,
+            column_config=column_config_fusion,
+        )
+
+        st.success(f"{len(df_sorted)} ativos encontrados")
+        adicionar_botao_copiar(df_sorted, label="🔥 Swing Trade Fusion — Best of Legacy + Evolved", vol_ratio=min_vol_ratio, adx_min=adx_min, rsi_min=rsi_min, rsi_max=rsi_max, perfil=perfil_selecionado)
+    else:
+        st.info("Nenhum ativo encontrado com os filtros atuais.")
+
+# Scanner 1: Swing Híbrido
+run_scanner(
+    "🔀 Scanner Swing Híbrido (Daily + 1H)",
+    lambda: scanner_swing_hibrido(ativos_global, adx_min, rsi_min, rsi_max, min_vol_ratio, vol_medio_min),
+    'df_hibrido',
+    descricao="Análise Daily com confirmação 1H. Tríade básica.",
+    vol_ratio=min_vol_ratio, adx_min=adx_min, rsi_min=rsi_min, rsi_max=rsi_max, perfil=perfil_selecionado
+)
+
+# Scanner 2: Swing RR
+run_scanner(
+    "🎯 Scanner Swing RR (Daily + ATR Targets)",
+    lambda: scanner_swing_rr(ativos_global, adx_min, rsi_min, rsi_max, min_vol_ratio, vol_medio_min),
+    'df_rr',
+    descricao="Base Híbrido + Stop (ATR×1.8), Alvos 1:2 e 1:3.",
+    vol_ratio=min_vol_ratio, adx_min=adx_min, rsi_min=rsi_min, rsi_max=rsi_max, perfil=perfil_selecionado
+)
+
+# Scanner 3: Swing Profissional
+run_scanner(
+    "🏆 Scanner Swing Profissional (Daily + 1H + 30M)",
+    lambda: scanner_swing_profissional(ativos_global, adx_min, rsi_min, rsi_max, min_vol_ratio, vol_medio_min),
+    'df_pro',
+    descricao="Multi-timeframe completo. ADX Rising + DI+ > DI- + Tríade obrigatórios.",
+    vol_ratio=min_vol_ratio, adx_min=adx_min, rsi_min=rsi_min, rsi_max=rsi_max, perfil=perfil_selecionado
+)
+
+# Scanner 4: Swing Expandido
+run_scanner(
+    "🌐 Scanner Swing Expandido (Mid + Small Caps)",
+    lambda: scanner_swing_expandido(adx_min, rsi_min, rsi_max, min_vol_ratio, vol_medio_min),
+    'df_exp',
+    descricao="Lista completa (Blue Chips + Mid/Small). Volume médio mínimo controlado pelo perfil.",
+    vol_ratio=min_vol_ratio, adx_min=adx_min, rsi_min=rsi_min, rsi_max=rsi_max, perfil=perfil_selecionado
+)
+
+# Feedback visual após atualização
+if rodar_todos:
+    st.toast("✅ Scanners atualizados com sucesso!", icon="🎉")
+
+st.markdown("---")
+st.caption(f"Última atualização: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}")
+
+# ===================== LEGACY PANEL =====================
+st.markdown("---")
+st.markdown("## 📚 LEGACY - VERSÕES ANTIGAS (COMPARAÇÃO)")
+st.caption(f"Compare os resultados dos scanners evoluídos com as versões antigas/legadas | {len(ativos_global)} ativos ({lista_global})")
+
+# Botão de refresh INDEPENDENTE dos scanners Legacy. Invalida APENAS os caches
+# Legacy (+ baixar_dados para snapshot fresco) — não afeta os scanners Evolved,
+# que só rodam ao trocar de perfil/seletores ou no botão "Atualizar Scanners".
+rodar_legacy = st.button(
+    "📚 Atualizar Legacy",
+    type="secondary",
+    help="Recalcula apenas os scanners Legacy com dados frescos. Independente dos seletores de perfil.",
+)
+if rodar_legacy:
+    for key in LEGACY_CACHE_KEYS:
+        st.session_state[key] = None
+    data_layer.invalidate()
+
+# Legacy Scanner 1: Profissional
+with st.expander("🔮 Legacy - Profissional (Final Corrigida)", expanded=True):
+    st.caption(f"Multi-timeframe: Daily + 1H + 30M | Filtros: Vol>1.5x, EMA20/50, ADX>20, RSI 45-75 | {len(ativos_global)} ativos ({lista_global})")
+
+    if rodar_legacy or st.session_state['df_legacy_prof'] is None:
+        with st.spinner("Analisando Legacy Profissional..."):
+            st.session_state['df_legacy_prof'] = legacy_profissional(ativos_global)
+
+    if st.session_state['df_legacy_prof'] is not None and not st.session_state['df_legacy_prof'].empty:
+        col1, col2 = st.columns(2)
+        with col1:
+            st.metric("Total Ativos", len(st.session_state['df_legacy_prof']))
+        with col2:
+            forte = len(st.session_state['df_legacy_prof'][st.session_state['df_legacy_prof']['Alinhamento'] == '✅ FORTE'])
+            st.metric("Alinhamento Forte", forte)
+
+        # Ordenar por Score Total
+        df_sorted = st.session_state['df_legacy_prof'].sort_values('Score Total', ascending=False).reset_index(drop=True)
+
+        column_config_legacy = {
+            'Preço': st.column_config.NumberColumn('Preço (R$)', format="R$ %.2f"),
+            'Vol Ratio': st.column_config.NumberColumn('Vol Ratio', format="%.2f"),
+            'RSI Daily': st.column_config.NumberColumn('RSI Daily', format="%.1f"),
+            'ADX Daily': st.column_config.NumberColumn('ADX Daily', format="%.1f"),
+            'RSI 1H': st.column_config.NumberColumn('RSI 1H', format="%.1f"),
+            'ADX 1H': st.column_config.NumberColumn('ADX 1H', format="%.1f"),
+            'RSI 30M': st.column_config.NumberColumn('RSI 30M', format="%.1f"),
+            'ADX 30M': st.column_config.NumberColumn('ADX 30M', format="%.1f"),
+            'Score Daily': st.column_config.NumberColumn('Score Daily', format="%d"),
+            'Score 1H': st.column_config.NumberColumn('Score 1H', format="%d"),
+            'Score 30M': st.column_config.NumberColumn('Score 30M', format="%d"),
+            'Score Total': st.column_config.NumberColumn('Score Total', format="%d"),
+        }
+
+        st.dataframe(
+            df_sorted,
+            width='stretch',
+            hide_index=True,
+            column_config=column_config_legacy,
+        )
+
+        st.success(f"{len(df_sorted)} ativos encontrados")
+        adicionar_botao_copiar(df_sorted, label="🔮 Legacy - Profissional (Final Corrigida)", vol_ratio=min_vol_ratio, adx_min=adx_min, rsi_min=rsi_min, rsi_max=rsi_max, usa_sliders=False)
+    else:
+        st.info("Nenhum ativo encontrado com os filtros da versão Profissional.")
+
+
+# Legacy Scanner 2: Intraday/Swing Curto Prazo
+with st.expander("⏰ Legacy - Intraday/Swing Curto Prazo", expanded=True):
+    st.caption(f"Filtros rigorosos: Vol>1.7x, Liquidez>8M, ADX≥22, RSI 47-73 | Score ponderado: Daily×1.6 + 1H + 30M | {len(ativos_global)} ativos ({lista_global})")
+
+    if rodar_legacy or st.session_state['df_legacy_intra'] is None:
+        with st.spinner("Analisando Legacy Intraday/Swing..."):
+            st.session_state['df_legacy_intra'] = legacy_intraday_swing(ativos_global)
+
+    if st.session_state['df_legacy_intra'] is not None and not st.session_state['df_legacy_intra'].empty:
+        col1, col2 = st.columns(2)
+        with col1:
+            st.metric("Total Ativos", len(st.session_state['df_legacy_intra']))
+        with col2:
+            forte = len(st.session_state['df_legacy_intra'][st.session_state['df_legacy_intra']['Alinhamento'] == '✅ FORTE'])
+            st.metric("Alinhamento Forte", forte)
+
+        # Ordenar por Score Total
+        df_sorted = st.session_state['df_legacy_intra'].sort_values('Score Total', ascending=False).reset_index(drop=True)
+
+        column_config_legacy2 = {
+            'Preço': st.column_config.NumberColumn('Preço (R$)', format="R$ %.2f"),
+            'Vol Ratio D': st.column_config.NumberColumn('Vol Ratio D', format="%.2f"),
+            'Vol Ratio H': st.column_config.NumberColumn('Vol Ratio H', format="%.2f"),
+            'RSI Daily': st.column_config.NumberColumn('RSI Daily', format="%.1f"),
+            'ADX Daily': st.column_config.NumberColumn('ADX Daily', format="%.1f"),
+            'RSI 1H': st.column_config.NumberColumn('RSI 1H', format="%.1f"),
+            'ADX 1H': st.column_config.NumberColumn('ADX 1H', format="%.1f"),
+            'Score 30M': st.column_config.NumberColumn('Score 30M', format="%d"),
+            'Score Total': st.column_config.NumberColumn('Score Total', format="%d"),
+        }
+
+        st.dataframe(
+            df_sorted,
+            width='stretch',
+            hide_index=True,
+            column_config=column_config_legacy2,
+        )
+
+        st.success(f"{len(df_sorted)} ativos encontrados")
+        adicionar_botao_copiar(df_sorted, label="⏰ Legacy - Intraday/Swing Curto Prazo", vol_ratio=min_vol_ratio, adx_min=adx_min, rsi_min=rsi_min, rsi_max=rsi_max, usa_sliders=False)
+    else:
+        st.info("Nenhum ativo encontrado com os filtros da versão Intraday/Swing.")
+
+
+# Legacy Scanner 3: Expandida
+with st.expander("🌐 Legacy - Expandida (Mid + Small Caps)", expanded=True):
+    st.caption(f"Vol médio relaxado (≥2.5M) | Confluência multi-TF detalhada | {len(ativos_global)} ativos ({lista_global})")
+
+    if rodar_legacy or st.session_state['df_legacy_exp'] is None:
+        with st.spinner("Analisando Legacy Expandida..."):
+            st.session_state['df_legacy_exp'] = legacy_expandida(ativos_global)
+
+    if st.session_state['df_legacy_exp'] is not None and not st.session_state['df_legacy_exp'].empty:
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("Total Ativos", len(st.session_state['df_legacy_exp']))
+        with col2:
+            excelentes = len(st.session_state['df_legacy_exp'][st.session_state['df_legacy_exp']['Confluência Geral'] == 'Excelente ✅✅'])
+            st.metric("Confluência Excelente", excelentes)
+        with col3:
+            boas = len(st.session_state['df_legacy_exp'][st.session_state['df_legacy_exp']['Confluência Geral'].isin(['Boa ✅', 'Excelente ✅✅'])])
+            st.metric("Confluência Boa+", boas)
+
+        # Ordenar por Score Diário
+        df_sorted = st.session_state['df_legacy_exp'].sort_values('Score Diário', ascending=False).reset_index(drop=True)
+
+        column_config_legacy3 = {
+            'Preço': st.column_config.NumberColumn('Preço (R$)', format="R$ %.2f"),
+            'Vol Ratio': st.column_config.NumberColumn('Vol Ratio', format="%.2f"),
+            'Vol Médio (M)': st.column_config.NumberColumn('Vol Médio (M)', format="%.1f"),
+            'RSI Daily': st.column_config.NumberColumn('RSI Daily', format="%.1f"),
+            'ADX Daily': st.column_config.NumberColumn('ADX Daily', format="%.1f"),
+            'RSI 1H': st.column_config.NumberColumn('RSI 1H', format="%.1f"),
+            'ADX 1H': st.column_config.NumberColumn('ADX 1H', format="%.1f"),
+            'RSI 30M': st.column_config.NumberColumn('RSI 30M', format="%.1f"),
+            'ADX 30M': st.column_config.NumberColumn('ADX 30M', format="%.1f"),
+            'Score Diário': st.column_config.NumberColumn('Score Diário', format="%d"),
+        }
+
+        st.dataframe(
+            df_sorted,
+            width='stretch',
+            hide_index=True,
+            column_config=column_config_legacy3,
+        )
+
+        st.success(f"{len(df_sorted)} ativos encontrados")
+        adicionar_botao_copiar(df_sorted, label="🌐 Legacy - Expandida (Mid + Small Caps)", vol_ratio=min_vol_ratio, adx_min=adx_min, rsi_min=rsi_min, rsi_max=rsi_max, usa_sliders=False)
+    else:
+        st.info("Nenhum ativo encontrado com os filtros da versão Expandida.")
+
+
+# Painel de falhas de aquisição — base para blacklist e diagnóstico por ativo.
+with st.expander("⚠️ Ativos com falha de dados (potencial blacklist)", expanded=False):
+    _falhas = data_layer.list_failures()
+    if _falhas is None or _falhas.empty:
+        st.caption("Nenhuma falha registrada — todos os ativos foram baixados com sucesso.")
+    else:
+        st.caption(
+            f"{len(_falhas)} (symbol, interval) com falha persistente de download. "
+            "Ordene por fail_count para identificar candidatos a blacklist."
+        )
+        st.dataframe(_falhas, use_container_width=True, hide_index=True)
+
+
+# ===================== Painel: teste de download — símbolos delistados =====================
+# Painel de diagnóstico ao final da página. Lista todos os símbolos removidos do
+# scanner (delistados/ausentes no Yahoo — ver DELISTED_SYMBOLS.md) com o link do
+# Yahoo para inspeção manual, e um teste de download SOMENTE LEITURA (yf.download
+# direto, sem passar pelo data_layer → não escreve no banco nem no fill_state nem
+# altera o universo ativo) que re-verifica se algum ativo voltou a responder
+# (relançamento, ticker restabelecido, fim de throttling) e poderia ser reativado.
+_SIMBOLOS_DELISTADOS = [
+    # (symbol, nome, categoria) — fonte: DELISTED_SYMBOLS.md
+    # 2026-07-07 — falha persistente de download (empty/truncated)
+    ("NEOE3.SA",  "Neoenergia",      "Ações — Energia"),
+    ("IRDM11.SA", "FII Iridium",     "FII"),
+    # Confirmados delistados/ausentes no Yahoo (verificação 2026-07-04)
+    ("BPAN4.SA",  "Banco Pan",       "Bancos"),
+    ("CIEL3.SA",  "Cielo",           "Serviços Financeiros"),
+    ("AZUL4.SA",  "Azul",            "Aéreas"),
+    ("GOLL4.SA",  "Gol",             "Aéreas"),
+    ("ELET3.SA",  "Elektro",         "Energia"),
+    ("ELET6.SA",  "Eletrobras",      "Energia"),
+    ("AESB3.SA",  "AES Sul",         "Energia"),
+    ("TRPL4.SA",  "Transmissão",     "Energia"),
+    ("CCRO3.SA",  "CCR",             "Logística"),
+    ("STBP3.SA",  "Wilson Sons",     "Industrial"),
+    ("SQIA3.SA",  "Sinqia",          "Tecnologia"),
+    ("GEOO41.SA", "Geo",             "Industrial"),
+    ("ARZZ3.SA",  "Arezzo",          "Varejo"),
+    ("SOMA3.SA",  "Grupo Soma",      "Varejo"),
+    ("PETZ3.SA",  "Petz",            "Varejo"),
+    ("NTCO3.SA",  "Natura &Co",      "Consumo"),
+    ("META34.SA", "Meta",            "BDR Tech"),
+    ("P1LT34.SA", "Palantir",        "BDR Tech"),
+    ("A1XP34.SA", "Adobe",           "BDR Tech"),
+    ("COST34.SA", "Costco",          "BDR Consumo"),
+    ("INTC34.SA", "Intel",           "BDR Tech"),
+    ("MAST34.SA", "Mastercard",      "BDR Finanças"),
+    ("C1RM34.SA", "Ciena",           "BDR Tech"),
+    ("BOING34.SA","Boeing",          "BDR Industrial"),
+    ("S1NO34.SA", "Sony",            "BDR Tech"),
+    ("A1MG34.SA", "Abbott",          "BDR Saúde"),
+    ("BCFF11.SA", "FII BC FF",       "FII"),
+    ("SHOT11.SA", "ETF SHOT",        "ETF"),
+    ("MALL11.SA", "FII MALL",        "FII"),
+    ("EURP11.SA", "ETF Europa",      "ETF"),
+    ("RRRP3.SA",  "3R Petroleum",    "Petróleo"),
+]
+
+
+def _testar_download_delistados(periodo="1mo", intervalo="1d", progress=None):
+    """Teste de download SOMENTE LEITURA dos símbolos delistados via yfinance.
+    Não usa o data_layer (não toca no banco/fill_state/universo ativo) — é um
+    diagnóstico puro de "este ticker voltou a responder?". Retorna lista de dicts
+    com symbol/nome/categoria/status/bars/erro/link. `progress(done,tot,symbol,ok)`
+    é opcional para barra de progresso da UI."""
+    total = len(_SIMBOLOS_DELISTADOS)
+    resultados = []
+    for idx, (symbol, nome, categoria) in enumerate(_SIMBOLOS_DELISTADOS):
+        bars, erro = 0, ""
+        try:
+            df = yf.download(symbol, interval=intervalo, period=periodo,
+                             progress=False, auto_adjust=True)
+            # yfinance recente devolve MultiIndex (price, ticker) num único ticker
+            if isinstance(df.columns, pd.MultiIndex):
+                df = df.droplevel(1, axis=1)
+            if df is not None and not df.empty:
+                bars = len(df)
+            else:
+                erro = "empty/truncated response"
+        except Exception as e:  # diagnóstico — captura qualquer erro de rede/API
+            erro = repr(e)
+        resultados.append({
+            "symbol": symbol,
+            "nome": nome,
+            "categoria": categoria,
+            "status": "✅ Online" if bars else "❌ Ainda falha",
+            "bars": bars,
+            "erro": erro,
+            "link": f"https://finance.yahoo.com/quote/{symbol}",
+        })
+        if progress is not None:
+            progress(idx + 1, total, symbol, bool(bars))
+    return resultados
+
+
+with st.expander("🧪 Gestão de símbolos — teste / list / delist", expanded=False):
+    _sb_on = symbol_store.configured()
+    _svc = symbol_store.has_service_key()
+    if _sb_on and _svc:
+        st.caption(
+            "Universo dinâmico via Supabase. O teste roda o download (+ probe HTTP "
+            "'No results for') e grava em `symbol_tests`; ao final aplica as regras "
+            "K/D/M (list↔watch↔delisted). Escopo default = só os com falha (rápido)."
+        )
+    elif _sb_on:
+        st.caption(
+            "Supabase configurado para leitura, mas sem SUPABASE_SERVICE_KEY — o teste "
+            "é somente leitura (não grava nem aplica regras)."
+        )
+    else:
+        st.caption(
+            f"{len(_SIMBOLOS_DELISTADOS)} símbolos removidos do scanner (ver "
+            "`DELISTED_SYMBOLS.md`). Supabase não configurado — diagnóstico offline "
+            "somente leitura via yfinance."
+        )
+
+    # ----------------------------- controles + job de teste -----------------------------
+    _cc1, _cc2 = st.columns([1, 2])
+    _periodo = _cc1.selectbox(
+        "Período do teste (intervalo 1d)", ["5d", "1mo", "3mo", "6mo", "1y"],
+        index=1, key="del_periodo",
+    )
+    if _sb_on and _svc:
+        _escopo = _cc2.selectbox(
+            "Escopo do teste",
+            ["Só com falha (watch/delisted/falha recente)", "Universo ativo (listed)",
+             "Delistados (bundled)"],
+            index=0, key="del_escopo",
+        )
+    else:
+        _escopo = "Delistados (bundled)"
+        _cc2.caption("_(escopo fixo: delistados bundled)_")
+
+    if _cc2.button("▶️ Rodar teste", type="primary", key="del_run"):
+        if _escopo == "Só com falha (watch/delisted/falha recente)":
+            _alvos = [r["symbol"] for r in symbol_store.erroring_symbols()]
+            if not _alvos:
+                st.info("Nenhum símbolo com falha no momento. 🎉")
+        elif _escopo == "Universo ativo (listed)":
+            _alvos = symbol_store.load_universe()
+        else:
+            _alvos = [s for s, _n, _c in _SIMBOLOS_DELISTADOS]
+
+        if _alvos:
+            _barra = st.progress(0.0)
+            _texto = st.empty()
+            _texto.text(f"Testando (0/{len(_alvos)})…")
+            _res = []
+
+            def _cb(done, tot, symbol, ok):
+                _barra.progress(done / tot if tot else 1.0)
+                _texto.text(f"Testando {done}/{tot} — {symbol} {'✓' if ok else '✗'}")
+
+            for _i, _sym in enumerate(_alvos):
+                if _svc:
+                    _r = symbol_store.run_test(_sym, "1d", _periodo)
+                    _res.append({
+                        "symbol": _sym,
+                        "status": "✅ Online" if _r["ok"] else "❌ Falha",
+                        "bars": _r["bars"],
+                        "erro": _r["error"],
+                        "delist_signal": "🚩" if _r["delist_signal"] else "",
+                        "link": f"https://finance.yahoo.com/quote/{_sym}",
+                    })
+                else:
+                    try:
+                        _df = yf.download(_sym, interval="1d", period=_periodo,
+                                          progress=False, auto_adjust=True)
+                        if isinstance(_df.columns, pd.MultiIndex):
+                            _df = _df.droplevel(1, axis=1)
+                        _bars = len(_df) if _df is not None and not _df.empty else 0
+                        _erro = "" if _bars else "empty/truncated response"
+                    except Exception as _e:
+                        _bars, _erro = 0, repr(_e)
+                    _res.append({
+                        "symbol": _sym,
+                        "status": "✅ Online" if _bars else "❌ Falha",
+                        "bars": _bars,
+                        "erro": _erro,
+                        "delist_signal": "",
+                        "link": f"https://finance.yahoo.com/quote/{_sym}",
+                    })
+                _cb(_i + 1, len(_alvos), _sym, _res[-1]["status"].startswith("✅"))
+            _barra.empty()
+            _texto.empty()
+            st.session_state["_delist_teste"] = _res
+
+            if _svc:
+                with st.spinner("Aplicando regras K/D/M…"):
+                    _changes = symbol_store.apply_rules()
+                if _changes:
+                    _chg = ", ".join(
+                        f"{c['symbol']} {c['from']}→{c['to']}" for c in _changes)
+                    st.success(f"Regras aplicadas — {len(_changes)} transição(ões): {_chg}")
+                else:
+                    st.caption("Regras aplicadas — nenhuma transição.")
+
+    # ----------------------------- tabela de resultados -----------------------------
+    _teste = st.session_state.get("_delist_teste")
+    if _teste:
+        _df_t = pd.DataFrame(_teste)
+        _online = int((_df_t["status"] == "✅ Online").sum())
+        _m1, _m2, _m3 = st.columns(3)
+        _m1.metric("Testados", len(_df_t))
+        _m2.metric("✅ Online", _online)
+        _m3.metric("❌ Falham", len(_df_t) - _online)
+        if _online:
+            _reativar = ", ".join(_df_t.loc[_df_t["status"] == "✅ Online", "symbol"].tolist())
+            st.info(f"Voltaram a responder: {_reativar}")
+        _df_show = _df_t.copy()
+        _df_show["_ok"] = _df_show["status"] != "✅ Online"
+        _df_show = _df_show.sort_values(["_ok", "symbol"]).drop(columns=["_ok"])
+        st.dataframe(
+            _df_show, use_container_width=True, hide_index=True,
+            column_config={
+                "symbol": st.column_config.TextColumn("Símbolo"),
+                "status": st.column_config.TextColumn("Status"),
+                "bars": st.column_config.NumberColumn("Barras", format="%d"),
+                "erro": st.column_config.TextColumn("Erro"),
+                "delist_signal": st.column_config.TextColumn("Sinal"),
+                "link": st.column_config.LinkColumn("Yahoo", display_text="🔗 Abrir"),
+            },
+        )
+    elif not _sb_on:
+        # Sem Supabase e sem teste rodado: tabela de links dos delistados bundled.
+        _df_links = pd.DataFrame(
+            [{"symbol": s, "categoria": c, "link": f"https://finance.yahoo.com/quote/{s}"}
+             for s, _n, c in _SIMBOLOS_DELISTADOS]
+        )
+        st.dataframe(
+            _df_links, use_container_width=True, hide_index=True,
+            column_config={
+                "symbol": st.column_config.TextColumn("Símbolo"),
+                "categoria": st.column_config.TextColumn("Categoria"),
+                "link": st.column_config.LinkColumn("Yahoo", display_text="🔗 Abrir"),
+            },
+        )
+
+    # ----------------------------- admin: override + log (service key) -----------------------------
+    if _sb_on and _svc:
+        st.markdown("**🔧 Override manual de status**")
+        _oc1, _oc2, _oc3 = st.columns([2, 1, 1])
+        _df_all = symbol_store.read_symbols()
+        _opcoes = sorted(_df_all["symbol"].tolist()) if not _df_all.empty else []
+        _sel = _oc1.selectbox("Símbolo", _opcoes, key="del_ov_sym", disabled=not _opcoes)
+        _novo = _oc2.selectbox("Novo status", ["listed", "watch", "delisted"], key="del_ov_stat")
+        if _oc3.button("Aplicar", key="del_ov_apply", disabled=not _opcoes):
+            if symbol_store.set_status(_sel, _novo, reason="manual (painel 🧪)", source="ui"):
+                st.success(f"{_sel} → {_novo}")
+            else:
+                st.warning(f"Sem mudança ({_sel} já estava {_novo}).")
+        with st.expander("📜 Log de transições de status", expanded=False):
+            _log = symbol_store.status_log(limit=100)
+            if _log.empty:
+                st.caption("Sem transições registradas.")
+            else:
+                st.dataframe(_log, use_container_width=True, hide_index=True)
+
+
 st.markdown("---")
 st.subheader("⚙️ Painel de Controle Global")
 

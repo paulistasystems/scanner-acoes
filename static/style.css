@@ -1,0 +1,205 @@
+:root {
+    --bg-color: #0e1117;
+    --text-color: #fafafa;
+    --panel-bg: #262730;
+    --primary: #ff4b4b;
+    --border: #4d4f5c;
+    --success: #00c853;
+    --warning: #ffd600;
+    --error: #ff5252;
+}
+
+body {
+    background-color: var(--bg-color);
+    color: var(--text-color);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    margin: 0;
+    padding: 20px;
+    line-height: 1.6;
+}
+
+header {
+    margin-bottom: 30px;
+}
+
+h1 {
+    font-size: 24px;
+    margin: 0 0 10px 0;
+}
+
+/* DB Panel */
+details#db-panel {
+    background-color: var(--panel-bg);
+    border-radius: 8px;
+    padding: 10px 15px;
+    margin-bottom: 20px;
+    border: 1px solid var(--border);
+}
+
+summary {
+    cursor: pointer;
+    font-weight: bold;
+    user-select: none;
+}
+
+.panel-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin: 15px 0;
+}
+
+.tabs {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 15px;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 10px;
+}
+
+.tab-btn {
+    background: none;
+    border: none;
+    color: var(--text-color);
+    cursor: pointer;
+    padding: 5px 10px;
+    opacity: 0.7;
+}
+
+.tab-btn.active {
+    opacity: 1;
+    border-bottom: 2px solid var(--primary);
+    font-weight: bold;
+}
+
+.tab-content {
+    display: none;
+}
+.tab-content.active {
+    display: block;
+}
+
+/* Controls */
+.config-section {
+    background-color: var(--panel-bg);
+    padding: 20px;
+    border-radius: 8px;
+    margin-bottom: 20px;
+}
+
+.form-group {
+    margin-bottom: 20px;
+}
+
+select, input[type="text"] {
+    background-color: #1e1e1e;
+    color: white;
+    border: 1px solid var(--border);
+    padding: 8px;
+    border-radius: 4px;
+    width: 100%;
+    max-width: 400px;
+}
+
+button {
+    background-color: #333;
+    color: white;
+    border: 1px solid var(--border);
+    padding: 8px 16px;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+button:hover {
+    background-color: #444;
+}
+
+.primary-btn {
+    background-color: var(--primary);
+    border-color: var(--primary);
+    width: 100%;
+    font-size: 16px;
+    padding: 12px;
+    margin-top: 10px;
+}
+
+.primary-btn:hover {
+    background-color: #ff3333;
+}
+
+.profiles {
+    display: flex;
+    gap: 15px;
+    margin-bottom: 10px;
+}
+
+.desc-text {
+    font-size: 14px;
+    color: #aaa;
+    background: #1e1e1e;
+    padding: 10px;
+    border-radius: 4px;
+}
+
+.sliders {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 15px;
+    margin-top: 15px;
+}
+
+.slider-group {
+    display: flex;
+    flex-direction: column;
+}
+
+.slider-group label {
+    font-size: 14px;
+    margin-bottom: 5px;
+}
+
+/* Warming Status */
+.warming-status {
+    background-color: rgba(255, 214, 0, 0.1);
+    border-left: 4px solid var(--warning);
+    padding: 15px;
+    margin-bottom: 20px;
+}
+
+progress {
+    width: 100%;
+    height: 10px;
+}
+
+/* Tables */
+.table-container {
+    overflow-x: auto;
+    margin-top: 10px;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14px;
+}
+
+th, td {
+    padding: 8px 12px;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+}
+
+th {
+    background-color: #1e1e1e;
+    position: sticky;
+    top: 0;
+}
+
+tr:hover {
+    background-color: rgba(255, 255, 255, 0.05);
+}
+
+.placeholder {
+    color: #888;
+    font-style: italic;
+}

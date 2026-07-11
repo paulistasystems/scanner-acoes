@@ -2,7 +2,56 @@
 
 Guidance for Claude Code working in this repository.
 
-## Environment
+> ## ⚠️ BRANCH `vanilla-web-scanner` — DO NOT EVER MERGE BACK INTO `master`
+>
+> This branch is a **divergent, parallel** port and MUST stay isolated. It re-pins the
+> project to **Python 3.9**, drops `pandas_ta`/`numba`/`streamlit`, and changes
+> `.python-version`, `requirements*`, and adds new files. Merging it into `master`
+> would clobber the 3.13 / Streamlit source of truth. **Never merge, rebase onto, or
+> cherry-pick from this branch into `master`.** Keep changes confined here. (The legacy
+> notice below that says "do not assume Python 3.9 / Flask" describes `master` — on
+> THIS branch that is exactly what we are.)
+>
+> See **"Arquitetura deste branch"** below for the vanilla-web stack.
+
+## Arquitetura deste branch (`vanilla-web-scanner`)
+
+Porte **full-parity** do scanner para **HTML/JS vanilla + backend Flask/WSGI**, para
+deploy em **Phusion Passenger (DirectAdmin)** em `paulista.dev/scanner`, que roda
+**Python 3.9.19** (virtualenv `/home/paulista/virtualenv/scanner/3.9/`, app root
+`/home/paulista/scanner`). O master é Streamlit em 3.13; este branch é a versão web.
+
+- **Python 3.9** (pinned em `.python-version` = `3.9`). Use o `venv39/` virtualenv:
+  `venv39/bin/python`, `venv39/bin/python app.py`. Deps em `requirements-py39.txt`
+  (Flask, yfinance, pandas, supabase, python-dotenv — **sem pandas_ta/numba/streamlit**).
+- **Sem `pandas_ta`** (não instala em 3.9). Os indicadores são reimplementados em pandas
+  puro em [`indicators.py`](indicators.py) (EMA, RSI, ATR, ADX/DI, MACD — suavização de
+  Wilder via RMA = `ewm(alpha=1/length, min_periods=length, adjust=False)`, mesma
+  convenção do pandas_ta; paridade validada por `tools/check_indicators.py`).
+- **Backend Flask** ([`app.py`](app.py)) serve `static/index.html` + uma API JSON
+  (`/api/scanners`, `/api/scan`, `/api/status`, `/api/warm`, `/api/refresh`,
+  `/api/bars`, `/api/fill_state`, `/api/failures`, `/api/symbols`). Entrada Passenger em
+  [`passenger_wsgi.py`](passenger_wsgi.py) (`application = app`).
+- **`scanners_core.py`**: lógica dos 8 scanners + Abertura extraída dos arquivos
+  Streamlit, **sem** acoplamento a streamlit/pandas_ta (usa `indicators` + `data_layer`).
+- **`warming.py`**: worker em background que roda `data_layer.prewarm()` (fetches lentos
+  do Yahoo). Cada request HTTP só **lê o banco** (rápido, <2s) e reporta progresso; o
+  frontend faz poll. Isso evita timeout do Passenger (Universal = 220+ ativos ×
+  intervalos = 5–15 min, bem acima do limite de ~120s por request).
+- **Frontend vanilla** (`static/index.html`, `static/app.js`, `static/style.css`): sem
+  build, sem framework — `fetch` + render de tabelas genérico. Montado em subpath
+  `/scanner`: URLs derivadas de `window.location.pathname` (mount-agnostic).
+- **Módulos reaproveitados do master, sem mudanças**: [`data_layer.py`](data_layer.py),
+  [`symbol_store.py`](symbol_store.py), [`symbols_fallback.py`](symbols_fallback.py)
+  (framework-agnostic e portáveis a 3.9).
+- **Arquivos Streamlit dormantes neste branch**: `scanner_interface_Streamlit.py`,
+  `scanner_abertura.py`, `painel_bd.py` — permanecem no repo, **não são importáveis
+  em 3.9** (sem pandas_ta/streamlit) e não são usados pelo app web. `master` segue como
+  fonte de verdade deles.
+- Deploy: ver [`passenger_README.md`](passenger_README.md). Local: `./run_web.sh` ou
+  `venv39/bin/python app.py`.
+
+## Environment (master branch — referência)
 
 - **Python 3.13** (pinned in `.python-version`). Use the `venv313/` virtualenv:
   `venv313/bin/python`, `venv313/bin/streamlit`, etc.

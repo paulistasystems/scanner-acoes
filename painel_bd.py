@@ -22,6 +22,7 @@ import streamlit as st
 import pandas as pd
 
 import data_layer
+import symbol_store
 
 
 def render_db_panel():
@@ -131,4 +132,86 @@ def render_db_panel():
                     file_name="fetch_failures.csv",
                     mime="text/csv",
                     key="pbd_dl_fail",
+                )
+
+    # Seção Supabase (catálogo dinâmico de símbolos) — só se configurado.
+    render_supabase_panel()
+
+
+def render_supabase_panel():
+    """Seção somente leitura do catálogo Supabase (símbolos / testes / log de status).
+
+    Só renderiza se o Supabase estiver configurado (URL + anon key). Leitura via anon key +
+    RLS; a escrita (testes/regras) acontece no painel 🧪 do scanner_interface. On-demand
+    (botão carregar) para não bater no Supabase a cada render."""
+    if not symbol_store.configured():
+        return
+    with st.expander("🌐 Supabase — catálogo de símbolos (somente leitura)", expanded=False):
+        st.caption(
+            "Universo dinâmico vindo do Supabase (fonte única, persiste entre redeploys). "
+            "Somente leitura — escrita (testes/regras) no painel 🧪."
+        )
+        if st.button("📊 Carregar catálogo", type="primary", key="pbd_sb_load"):
+            st.session_state["pbd_sb_loaded"] = True
+        if not st.session_state.get("pbd_sb_loaded"):
+            return
+
+        tab_sym, tab_tests, tab_log = st.tabs(
+            ["🗂️ Símbolos", "🔬 Testes", "📜 Log de status"]
+        )
+
+        # ----------------------------- símbolos -----------------------------
+        with tab_sym:
+            c1, c2 = st.columns([1, 2])
+            status_filter = c1.selectbox(
+                "Status", ["listed", "watch", "delisted", "todos"], index=0, key="pbd_sb_status"
+            )
+            busca = c2.text_input(
+                "Buscar ticker (ex.: PETR4)", "", key="pbd_sb_busca"
+            ).strip().upper()
+            with st.spinner("Lendo catálogo…"):
+                df = symbol_store.read_symbols(
+                    status=None if status_filter == "todos" else status_filter
+                )
+            if df.empty:
+                st.info(
+                    "Catálogo vazio — crie as tabelas (`supabase_schema.sql`) e rode o seed "
+                    "(`seed_symbols.py`)."
+                )
+            else:
+                if busca:
+                    df = df[df["symbol"].str.contains(busca, case=False, na=False)]
+                st.caption(f"**{len(df)}** símbolo(s) (filtro: {status_filter}).")
+                st.dataframe(df, hide_index=True, use_container_width=True)
+                st.download_button(
+                    "⬇️ Baixar CSV", df.to_csv(index=False).encode("utf-8"),
+                    file_name="symbols.csv", mime="text/csv", key="pbd_sb_dl_sym",
+                )
+
+        # ----------------------------- testes -----------------------------
+        with tab_tests:
+            lim = st.slider("Limite de linhas", 50, 1000, 200, step=50, key="pbd_sb_tlim")
+            with st.spinner("Lendo testes…"):
+                df_t = symbol_store.read_tests(limit=lim)
+            if df_t.empty:
+                st.info("Sem testes registrados — rode o job no painel 🧪.")
+            else:
+                st.dataframe(df_t, hide_index=True, use_container_width=True)
+                st.download_button(
+                    "⬇️ Baixar CSV", df_t.to_csv(index=False).encode("utf-8"),
+                    file_name="symbol_tests.csv", mime="text/csv", key="pbd_sb_dl_tests",
+                )
+
+        # ----------------------------- log de status -----------------------------
+        with tab_log:
+            lim2 = st.slider("Limite de linhas", 50, 1000, 100, step=50, key="pbd_sb_llim")
+            with st.spinner("Lendo log…"):
+                df_l = symbol_store.status_log(limit=lim2)
+            if df_l.empty:
+                st.info("Sem transições de status registradas.")
+            else:
+                st.dataframe(df_l, hide_index=True, use_container_width=True)
+                st.download_button(
+                    "⬇️ Baixar CSV", df_l.to_csv(index=False).encode("utf-8"),
+                    file_name="symbol_status_log.csv", mime="text/csv", key="pbd_sb_dl_log",
                 )

@@ -10,42 +10,17 @@ import yfinance as yf
 import pandas_ta as ta
 import data_layer
 import painel_bd
-
-# ===================== LISTAS POR CATEGORIA (BUSCA UNIVERSAL) =====================
-UNIV_BANCOS = ['ITUB4.SA', 'BBAS3.SA', 'BBDC4.SA', 'BBDC3.SA', 'SANB11.SA', 'BPAC11.SA', 'ITSA4.SA', 'BBSE3.SA', 'PSSA3.SA', 'BRSR6.SA', 'ABCB4.SA', 'BMGB4.SA', 'IRBR3.SA']
-UNIV_ENERGIA = ['EQTL3.SA', 'CMIG4.SA', 'CPFE3.SA', 'ENGI11.SA', 'CPLE3.SA', 'AURE3.SA', 'TAEE11.SA', 'EGIE3.SA', 'COCE5.SA', 'ENEV3.SA', 'CSMG3.SA', 'SBSP3.SA', 'SAPR11.SA']
-UNIV_PETROLEO = ['PETR4.SA', 'PETR3.SA', 'PRIO3.SA', 'CSAN3.SA', 'UGPA3.SA', 'VBBR3.SA', 'RECV3.SA', 'RAIZ4.SA']
-UNIV_MINERACAO = ['VALE3.SA', 'GGBR4.SA', 'GGBR3.SA', 'GOAU4.SA', 'USIM5.SA', 'CSNA3.SA', 'CMIN3.SA', 'FESA4.SA', 'BRKM5.SA', 'UNIP6.SA']
-UNIV_VAREJO = ['LREN3.SA', 'MGLU3.SA', 'GRND3.SA', 'ALPA4.SA', 'CEAB3.SA', 'RIAA3.SA', 'LJQQ3.SA', 'BHIA3.SA', 'AMAR3.SA', 'VULC3.SA']
-UNIV_SAUDE = ['HAPV3.SA', 'RDOR3.SA', 'FLRY3.SA', 'HYPE3.SA', 'RADL3.SA', 'ONCO3.SA', 'BLAU3.SA', 'AALR3.SA']
-UNIV_IMOBILIARIO = ['MRVE3.SA', 'CYRE3.SA', 'EVEN3.SA', 'EZTC3.SA', 'DIRR3.SA', 'TEND3.SA', 'LAVV3.SA', 'TRIS3.SA', 'MDNE3.SA', 'CURY3.SA', 'PLPL3.SA', 'MELK3.SA', 'MTRE3.SA', 'GFSA3.SA']
-UNIV_ALIMENTOS = ['ABEV3.SA', 'JBSS32.SA', 'BRFT11.SA', 'MBRF3.SA', 'BEEF3.SA', 'MDIA3.SA', 'SMTO3.SA', 'SLCE3.SA', 'AGRO3.SA', 'CAML3.SA', 'JALL3.SA']
-UNIV_TRANSPORTES = ['ECOR3.SA', 'EMBJ3.SA', 'RAIL3.SA', 'TGMA3.SA', 'HBSA3.SA', 'LOGN3.SA']
-UNIV_TECH = ['VIVT3.SA', 'TIMS3.SA', 'TOTS3.SA', 'LWSA3.SA', 'POSI3.SA', 'INTB3.SA', 'CASH3.SA', 'BMOB3.SA', 'MLAS3.SA', 'DESK3.SA', 'SEQL3.SA']
-UNIV_INDUSTRIAL = ['WEGE3.SA', 'B3SA3.SA', 'RENT3.SA', 'VAMO3.SA', 'SIMH3.SA', 'KEPL3.SA', 'TUPY3.SA', 'POMO4.SA', 'RAPT4.SA', 'LEVE3.SA', 'MILS3.SA', 'WIZC3.SA', 'MULT3.SA', 'IGTI11.SA']
-UNIV_PAPEL = ['KLBN11.SA', 'SUZB3.SA', 'DXCO3.SA']
-UNIV_EDUCACAO = ['COGN3.SA', 'YDUQ3.SA', 'ANIM3.SA', 'SEER3.SA']
-
-_ACOES_UNIVERSAL = (UNIV_BANCOS + UNIV_ENERGIA + UNIV_PETROLEO + UNIV_MINERACAO + 
-                    UNIV_VAREJO + UNIV_SAUDE + UNIV_IMOBILIARIO + UNIV_ALIMENTOS + 
-                    UNIV_TRANSPORTES + UNIV_TECH + UNIV_INDUSTRIAL + UNIV_PAPEL + UNIV_EDUCACAO)
-
-# BDRs
-BDR_TECH = ['AAPL34.SA', 'MSFT34.SA', 'AMZO34.SA', 'GOGL34.SA', 'NVDC34.SA', 'TSLA34.SA', 'NFLX34.SA', 'ADBE34.SA', 'ORCL34.SA', 'CSCO34.SA', 'AVGO34.SA', 'QCOM34.SA', 'A1MD34.SA', 'PYPL34.SA', 'U1BE34.SA', 'S1PO34.SA']
-BDR_FINANCAS = ['JPMC34.SA', 'BOAC34.SA', 'GSGI34.SA', 'MSBR34.SA', 'BERK34.SA', 'VISA34.SA']
-BDR_CONSUMO = ['COCA34.SA', 'PEPB34.SA', 'MCDC34.SA', 'NIKE34.SA', 'SBUB34.SA', 'PGCO34.SA', 'WALM34.SA', 'HOME34.SA', 'DISB34.SA']
-BDR_SAUDE = ['JNJB34.SA', 'PFIZ34.SA', 'MRCK34.SA', 'ABBV34.SA', 'LILY34.SA']
-BDR_INDUSTRIAL = ['CATP34.SA', 'HONB34.SA', 'MMMC34.SA', 'EXXO34.SA', 'CHVX34.SA', 'DHER34.SA']
-_BDRS_UNIVERSAL = BDR_TECH + BDR_FINANCAS + BDR_CONSUMO + BDR_SAUDE + BDR_INDUSTRIAL
-
-# ETFs e FIIs
-_ETFS_UNIVERSAL = ['BOVA11.SA', 'BOVV11.SA', 'SMAL11.SA', 'XBOV11.SA', 'DIVO11.SA', 'MATB11.SA', 'FIND11.SA', 'GOVE11.SA', 'PIBB11.SA', 'IVVB11.SA', 'SPXI11.SA', 'NASD11.SA', 'HASH11.SA', 'QBTC11.SA', 'ETHE11.SA', 'GOLD11.SA', 'TECK11.SA', 'JURO11.SA', 'IMAB11.SA', 'IRFM11.SA', 'B5P211.SA', 'FIXA11.SA']
-_FIIS_UNIVERSAL = ['HGLG11.SA', 'BTLG11.SA', 'XPLG11.SA', 'VILG11.SA', 'BRCO11.SA', 'XPML11.SA', 'VISC11.SA', 'HSML11.SA', 'KNRI11.SA', 'PVBI11.SA', 'JSRE11.SA', 'BRCR11.SA', 'RCRB11.SA', 'MXRF11.SA', 'CPTS11.SA', 'RBRR11.SA', 'RECR11.SA', 'VGIP11.SA', 'KNCR11.SA', 'HGCR11.SA', 'HGBS11.SA', 'ALZR11.SA', 'TRXF11.SA', 'TGAR11.SA', 'RBRF11.SA']
-
-ATIVOS_B3_AMPLIADO = list(set(_ACOES_UNIVERSAL + _BDRS_UNIVERSAL + _ETFS_UNIVERSAL + _FIIS_UNIVERSAL))
+import symbol_store
 
 # Configs de interface Streamlit
 st.set_page_config(page_title="Scanner de Abertura", layout="wide", page_icon="🌅")
+
+symbol_store.bridge_streamlit_secrets()  # st.secrets → os.environ (Cloud); local usa .env
+
+# ===================== UNIVERSO DE ATIVOS (fonte: Supabase via symbol_store) =====================
+# Universo único e compartilhado entre os scanners (acabou a duplicação manual). O catálogo
+# vive no Supabase; `symbols_fallback` (importado por symbol_store) é o fallback + seed.
+ATIVOS_B3_AMPLIADO = symbol_store.load_universe()
 st.title("🌅 SCANNER DE ABERTURA - ESTABILIZAÇÃO (15M)")
 st.markdown("Analisa o **volume do primeiro candle (10:00)** vs **candle das 10:15** para encontrar ativos em estabilização após gap/euforia inicial. Ideal para ser rodado a partir das 10:30.")
 

@@ -254,6 +254,18 @@ analisar_tendencia_tf(df) → "✅ Alta" / "⚠️ Neutra" / "❌ Baixa"
 > única fonte de verdade — com **listagem/delistagem automatizada com base em testes de
 > download** (a lógica que hoje é 100% manual).
 
+> **✅ Status (2026-07-11) — Fase 0–3 implementadas em código.** Novos arquivos:
+> `symbol_store.py` (leitura anon + escrita service_role + motor de regras K/D/M),
+> `symbols_fallback.py` (universo único compartilhado, fim da duplicação entre scanners, +
+> seed), `seed_symbols.py` e `supabase_schema.sql`. Ambos os scanners leem o universo do
+> Supabase com fallback bundled; o painel de BD (`painel_bd.py`) ganhou seção Supabase só
+> leitura; o painel 🧪 virou o job in-app (teste + probe HTTP `"No results for"` + regras
+> automáticas + override manual). **Pendente (execução manual):** (1) rodar
+> `supabase_schema.sql` no SQL Editor do Supabase; (2) preencher `SUPABASE_SERVICE_KEY` no
+> `.env` (e `st.secrets` no Cloud); (3) rodar `venv313/bin/python seed_symbols.py`. A Fase 4
+> (depreciar `_SIMBOLOS_DELISTADOS`/`DELISTED_SYMBOLS.md` como export) fica para depois do
+> seed + validação em produção.
+
 ### 🔴 Problema atual
 
 Hoje o universo é gerenciado em três lugares desconectados, todos manuais:
@@ -468,19 +480,7 @@ CREATE TABLE delist_indicators (
 
 ### Curto Prazo
 - [ ] **[Supabase] Gestão dinâmica de símbolos** — ver seção dedicada acima (Fase 0 → 4)
-- [ ] Otimizar cache de dados (prevenção de timeout em modo Universal)
-- [ ] Adicionar alertas em tempo real (via WebSocket)
-- [ ] Exportar resultados para CSV/Excel
-
-### Médio Prazo
-- [ ] Machine Learning para previsão de movimentos
-- [ ] Backtesting visual de estratégias
-- [ ] Sistema de notificações (Telegram/Email)
-
-### Longo Prazo
-- [ ] API REST para integração com bots de trading
-- [ ] Versão mobile (PWA)
-- [ ] Multi-mercado (Forex, Crypto)
+- [x] Otimizar cache de dados (prevenção de timeout em modo Universal)
 
 ---
 

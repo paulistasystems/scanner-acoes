@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Scanner Ações BR</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <header>
+        <h1>📈 SCANNER CONSOLIDADO DE AÇÕES - BRASIL</h1>
+    </header>
+
+    <main>
+        <!-- DB Panel (Collapsible) -->
+        <details id="db-panel">
+            <summary>🗄️ Painel de Banco de Dados</summary>
+            <div class="panel-content">
+                <div class="panel-header">
+                    <span id="db-summary">Carregando summary...</span>
+                    <div>
+                        <button id="btn-refresh">🔄 Refresh DB</button>
+                        <button id="btn-warm">🔥 Forçar Warm</button>
+                    </div>
+                </div>
+                <div class="tabs">
+                    <button class="tab-btn active" data-target="tab-bars">Barras Recentes</button>
+                    <button class="tab-btn" data-target="tab-fill">Status de Preenchimento</button>
+                    <button class="tab-btn" data-target="tab-failures">Falhas</button>
+                </div>
+                <div id="tab-bars" class="tab-content active">
+                    <div class="bars-controls">
+                        <input type="text" id="bars-symbol" placeholder="PETR4.SA" value="PETR4.SA">
+                        <select id="bars-interval">
+                            <option value="1d">1d</option>
+                            <option value="1h">1h</option>
+                            <option value="30m">30m</option>
+                            <option value="15m">15m</option>
+                        </select>
+                        <button id="btn-load-bars">Carregar</button>
+                    </div>
+                    <div class="table-container" id="table-bars"></div>
+                </div>
+                <div id="tab-fill" class="tab-content">
+                    <div class="table-container" id="table-fill"></div>
+                </div>
+                <div id="tab-failures" class="tab-content">
+                    <div class="table-container" id="table-failures"></div>
+                </div>
+            </div>
+        </details>
+
+        <!-- Scanner Configuration -->
+        <section class="config-section">
+            <div class="form-group">
+                <label for="scanner-select">Selecione o Scanner:</label>
+                <select id="scanner-select">
+                    <option value="">Carregando scanners...</option>
+                </select>
+            </div>
+
+            <div id="profile-controls" style="display: none;">
+                <div class="profiles">
+                    <label><input type="radio" name="profile" value="Conservador" checked> 🛡️ Conservador</label>
+                    <label><input type="radio" name="profile" value="Moderado"> ⚖️ Moderado</label>
+                    <label><input type="radio" name="profile" value="Agressivo"> 🔥 Agressivo</label>
+                    <label><input type="radio" name="profile" value="Personalizado"> ⚙️ Personalizado</label>
+                </div>
+                
+                <p id="profile-desc" class="desc-text"></p>
+
+                <div class="sliders" id="custom-sliders">
+                    <div class="slider-group">
+                        <label>Vol Ratio Min: <span id="val-vol">1.5</span></label>
+                        <input type="range" id="vol_ratio_min" min="0.5" max="3.0" step="0.1" value="1.5">
+                    </div>
+                    <div class="slider-group">
+                        <label>Vol Médio Min: <span id="val-liq">1000000</span></label>
+                        <input type="range" id="vol_medio_min" min="100000" max="10000000" step="100000" value="1000000">
+                    </div>
+                    <div class="slider-group">
+                        <label>ADX Min: <span id="val-adx">20</span></label>
+                        <input type="range" id="adx_min" min="10" max="40" step="1" value="20">
+                    </div>
+                    <div class="slider-group">
+                        <label>RSI Min: <span id="val-rsi-min">45</span></label>
+                        <input type="range" id="rsi_min" min="20" max="60" step="1" value="45">
+                    </div>
+                    <div class="slider-group">
+                        <label>RSI Max: <span id="val-rsi-max">65</span></label>
+                        <input type="range" id="rsi_max" min="50" max="90" step="1" value="65">
+                    </div>
+                </div>
+            </div>
+
+            <button id="btn-run" class="primary-btn">🔄 Executar Scanner</button>
+        </section>
+
+        <!-- Warming Status -->
+        <div id="warming-status" class="warming-status" style="display: none;">
+            <p>🔥 Baixando dados para o cache local (<span id="warm-pct">0</span>%)</p>
+            <progress id="warm-progress" value="0" max="100"></progress>
+            <p class="small" id="warm-detail">Aguarde...</p>
+        </div>
+
+        <!-- Results -->
+        <section class="results-section">
+            <h2>Resultados</h2>
+            <div id="results-count"></div>
+            <div class="table-container" id="table-results">
+                <p class="placeholder">Clique em "Executar Scanner" para ver os resultados.</p>
+            </div>
+        </section>
+    </main>
+
+    <script src="app.js"></script>
+</body>
+</html>
