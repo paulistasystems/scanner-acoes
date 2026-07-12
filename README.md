@@ -9,9 +9,9 @@ a fonte de verdade Streamlit/3.13 — este branch **nunca deve ser mergeado ao m
 - **Backend:** Flask + `passenger_wsgi.py` (entry point do Passenger)
 - **Frontend:** HTML/JS/CSS vanilla puro — sem build, sem framework
 - **Python:** 3.9 (compatível com o servidor remoto 3.9.19)
-- **Indicadores:** reimplementados em pandas puro (`indicators.py`) — sem `pandas_ta`/`numba`
+- **Indicadores:** Reimplementados em pandas puro (`indicators.py`) — sem `pandas_ta`/`numba`
 - **Dados:** `yfinance` → SQLite (`scanner_web.db`) via `data_layer.py`
-- **Símbolos:** Supabase + fallback local (`symbols_fallback.py`)
+- **Símbolos:** Fallback local e estático via `symbols_fallback.py` / `symbol_store.py` (Supabase removido)
 
 ## Desenvolvimento local
 

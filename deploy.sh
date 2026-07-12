@@ -34,10 +34,11 @@ echo "==> Montando stage..."
 STAGE=$(mktemp -d)
 mkdir -p "$STAGE/static" "$STAGE/tmp"
 
-cp app.py passenger_wsgi.py scanners_core.py warming.py indicators.py \
+# Preserve original modification times (mtime) so LFTP doesn't think files changed
+cp -p app.py passenger_wsgi.py scanners_core.py warming.py indicators.py \
    data_layer.py symbol_store.py symbols_fallback.py "$STAGE/"
-cp static/app.js static/index.html static/style.css "$STAGE/static/"
-cp requirements-py39.txt .python-version .env "$STAGE/"
+cp -p static/app.js static/index.html static/style.css "$STAGE/static/"
+cp -p requirements-py39.txt .python-version .env "$STAGE/"
 date > "$STAGE/tmp/restart.txt"
 
 echo "   Stage: $STAGE"
@@ -97,16 +98,19 @@ if [ -f "$APP_MARKER" ]; then
   PREVIOUS_APP_HASH=$(cat "$APP_MARKER")
 fi
 
-lftp -u "$FTP_USER","$FTP_PASS" "ftp://$FTP_HOST" <<EOF
+if [ "$FORCE_DEPLOY" = true ] || [ "$CURRENT_APP_HASH" != "$PREVIOUS_APP_HASH" ]; then
+  lftp -u "$FTP_USER","$FTP_PASS" "ftp://$FTP_HOST" <<EOF
 set ftp:passive-mode on
 set net:timeout 60
 set net:max-retries 3
-mirror --reverse --delete --only-newer --ignore-time --parallel=4 --verbose $STAGE /scanner
+mirror --reverse --delete --only-newer --parallel=4 --verbose $STAGE /scanner
 bye
 EOF
-
-echo "$CURRENT_APP_HASH" > "$APP_MARKER"
-echo "   App files sincronizados."
+  echo "$CURRENT_APP_HASH" > "$APP_MARKER"
+  echo "   App files sincronizados."
+else
+  echo "   App files não mudaram, pulando sincronização."
+fi
 
 # 6. Verify
 echo ""
