@@ -3,7 +3,7 @@ import math
 from flask import Flask, request, jsonify, send_from_directory
 from dotenv import load_dotenv
 
-# Load env variables (for SUPABASE_URL, etc.)
+# Load env variables (FTP_HOST, etc.)
 load_dotenv()
 
 # We set a separate DB for the web version if not specified, 

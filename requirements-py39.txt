@@ -1,0 +1,7 @@
+# Python 3.9 — alvo Passenger / DirectAdmin (paulista.dev/scanner).
+# SEM pandas_ta/numba/streamlit/supabase: indicadores em pandas puro (indicators.py).
+# Universo de ativos: lista bundled em symbols_fallback.py (sem dep. externa).
+Flask>=2.3.0
+yfinance>=0.2.28
+pandas>=2.0.0
+python-dotenv>=1.0.0
