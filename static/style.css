@@ -203,3 +203,73 @@ tr:hover {
     color: #888;
     font-style: italic;
 }
+
+/* Profile config */
+.config-title {
+    font-size: 15px;
+    margin: 0 0 12px 0;
+    color: #ccc;
+    font-weight: 600;
+}
+
+/* Scanners grids */
+.results-section {
+    margin-bottom: 24px;
+}
+
+.results-section h2 {
+    font-size: 18px;
+    margin: 0 0 12px 0;
+}
+
+.grid-hint {
+    font-size: 13px;
+    font-weight: normal;
+    color: #aaa;
+}
+
+.scanners-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(640px, 1fr));
+    gap: 16px;
+    align-items: start;
+}
+
+.scanner-panel {
+    background-color: var(--panel-bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 14px;
+    min-width: 0; /* permite que a tabela enrole horizontalmente dentro do grid */
+}
+
+.scanner-panel > header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 8px;
+}
+
+.panel-name {
+    font-weight: bold;
+    font-size: 15px;
+}
+
+.panel-badge {
+    font-size: 12px;
+    font-weight: bold;
+    padding: 2px 10px;
+    border-radius: 12px;
+    white-space: nowrap;
+}
+
+.panel-badge.loading { background: rgba(255, 214, 0, 0.15); color: var(--warning); }
+.panel-badge.done    { background: rgba(0, 200, 83, 0.15); color: var(--success); }
+.panel-badge.empty   { background: rgba(255, 255, 255, 0.08); color: #aaa; }
+.panel-badge.error   { background: rgba(255, 82, 82, 0.15); color: var(--error); }
+
+#btn-run-all:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}

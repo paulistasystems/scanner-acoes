@@ -50,16 +50,10 @@
             </div>
         </details>
 
-        <!-- Scanner Configuration -->
+        <!-- Scanner Configuration (profile applies to Swing scanners on auto-run) -->
         <section class="config-section">
-            <div class="form-group">
-                <label for="scanner-select">Selecione o Scanner:</label>
-                <select id="scanner-select">
-                    <option value="">Carregando scanners...</option>
-                </select>
-            </div>
-
-            <div id="profile-controls" style="display: none;">
+            <div id="profile-controls">
+                <h3 class="config-title">Perfil — aplicado aos scanners Swing</h3>
                 <div class="profiles">
                     <label><input type="radio" name="profile" value="Conservador" checked> 🛡️ Conservador</label>
                     <label><input type="radio" name="profile" value="Moderado"> ⚖️ Moderado</label>
@@ -93,7 +87,7 @@
                 </div>
             </div>
 
-            <button id="btn-run" class="primary-btn">🔄 Executar Scanner</button>
+            <button id="btn-run-all" class="primary-btn">🔄 Atualizar Todos os Scanners</button>
         </section>
 
         <!-- Warming Status -->
@@ -103,13 +97,14 @@
             <p class="small" id="warm-detail">Aguarde...</p>
         </div>
 
-        <!-- Results -->
+        <!-- Scanners Grids (auto-run on page load) -->
         <section class="results-section">
-            <h2>Resultados</h2>
-            <div id="results-count"></div>
-            <div class="table-container" id="table-results">
-                <p class="placeholder">Clique em "Executar Scanner" para ver os resultados.</p>
-            </div>
+            <h2>Scanners Swing <span class="grid-hint">(respondem ao perfil)</span></h2>
+            <div id="grid-profile" class="scanners-grid"></div>
+        </section>
+        <section class="results-section">
+            <h2>Scanners Fixos <span class="grid-hint">(Legacy + Abertura)</span></h2>
+            <div id="grid-fixed" class="scanners-grid"></div>
         </section>
     </main>
 

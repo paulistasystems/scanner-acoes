@@ -6,47 +6,170 @@ const PROFILES = {
     "Agressivo": { adx_min: 15, rsi_min: 40, rsi_max: 80, vol_ratio: 0.8, vol_medio_min: 300000, desc: "Máximo de oportunidades. Volume permissivo (0.8x) + liquidez mínima 300K." },
 };
 
+// Todos os 4 intervalos — cobre também os scanners de Abertura (15m).
+const WARM_INTERVALS = "1d,1h,30m,15m";
+
 let currentScanners = [];
-let pollInterval = null;
 
 async function init() {
-    await fetchScanners();
     setupEventListeners();
+    await fetchScanners();
+    buildGrid();
     updateStatus();
     setInterval(updateStatus, 5000); // Poll status every 5s
+    startup(); // Auto-run todos os scanners no carregamento da página
 }
 
 async function fetchScanners() {
     try {
         const res = await fetch(`${BASE}/api/scanners`);
         const data = await res.json();
-        currentScanners = data.scanners;
-        
-        const select = document.getElementById('scanner-select');
-        select.innerHTML = '<option value="">-- Escolha um Scanner --</option>';
-        data.scanners.forEach(s => {
-            select.innerHTML += `<option value="${s.id}">${s.name}</option>`;
-        });
+        currentScanners = data.scanners || [];
     } catch (e) {
         console.error("Failed to load scanners", e);
+        currentScanners = [];
+    }
+}
+
+// Constrói um painel por scanner, separando os que usam perfil (Swing) dos fixos.
+function buildGrid() {
+    const profileGrid = document.getElementById('grid-profile');
+    const fixedGrid = document.getElementById('grid-fixed');
+    if (!profileGrid || !fixedGrid) return;
+
+    profileGrid.innerHTML = '';
+    fixedGrid.innerHTML = '';
+
+    currentScanners.forEach(s => {
+        const panel = document.createElement('div');
+        panel.className = 'scanner-panel';
+        panel.dataset.id = s.id;
+        panel.innerHTML = `
+            <header>
+                <span class="panel-name">${escapeHtml(s.name)}</span>
+                <span class="panel-badge loading">⏳ aguardando</span>
+            </header>
+            <div class="table-container"></div>
+        `;
+        (s.uses_profile ? profileGrid : fixedGrid).appendChild(panel);
+    });
+}
+
+function panelFor(id) {
+    return document.querySelector(`.scanner-panel[data-id="${CSS.escape(id)}"]`);
+}
+
+function setBadge(panel, state, text) {
+    if (!panel) return;
+    const badge = panel.querySelector('.panel-badge');
+    if (!badge) return;
+    badge.className = `panel-badge ${state}`;
+    badge.innerText = text;
+}
+
+// Fluxo de carregamento: garante aquecimento (se DB frio) e então dispara todos os scans.
+async function startup() {
+    setRunAllButton(false);
+    try {
+        const res = await fetch(`${BASE}/api/status`);
+        const data = await res.json();
+        const fillState = (data.summary && typeof data.summary === 'object')
+            ? (data.summary.fill_state || 0) : 0;
+
+        if (data.warming) {
+            // Um aquecimento já está rodando (outra aba/sessão): apenas aguardar.
+            await waitForWarm();
+        } else if (fillState === 0) {
+            // DB frio (nunca aquecido): dispara aquecimento cobrindo todos os intervalos.
+            await fetch(`${BASE}/api/warm`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ intervals: WARM_INTERVALS })
+            });
+            await waitForWarm();
+        }
+        // DB já aquecido: segue direto para os scans.
+    } catch (e) {
+        console.error("startup status check failed", e);
+    } finally {
+        runAll();
+    }
+}
+
+// Resolve quando o aquecimento em background termina.
+function waitForWarm() {
+    return new Promise((resolve) => {
+        const check = async () => {
+            try {
+                const res = await fetch(`${BASE}/api/status`);
+                const data = await res.json();
+                updateStatusFrom(data);
+                if (!data.warming) { resolve(); return; }
+            } catch (e) {
+                console.error("waitForWarm status failed", e);
+            }
+            setTimeout(check, 3000);
+        };
+        check();
+    });
+}
+
+// Dispara todos os scanners em paralelo — cada painel preenche independentemente.
+function runAll() {
+    setRunAllButton(false);
+    const promises = currentScanners.map(s => runSingle(s));
+    Promise.allSettled(promises).finally(() => setRunAllButton(true));
+}
+
+async function runSingle(scanner) {
+    const panel = panelFor(scanner.id);
+    if (!panel) return;
+    const body = panel.querySelector('.table-container');
+    setBadge(panel, 'loading', '⏳ executando…');
+    body.innerHTML = '';
+
+    let url = `${BASE}/api/scan?scanner=${encodeURIComponent(scanner.id)}`;
+    if (scanner.uses_profile) {
+        const adx = document.getElementById('adx_min').value;
+        const rsi_min = document.getElementById('rsi_min').value;
+        const rsi_max = document.getElementById('rsi_max').value;
+        const vol_ratio = document.getElementById('vol_ratio_min').value;
+        const vol_medio = document.getElementById('vol_medio_min').value;
+        url += `&adx_min=${adx}&rsi_min=${rsi_min}&rsi_max=${rsi_max}&vol_ratio_min=${vol_ratio}&vol_medio_min=${vol_medio}`;
+    }
+
+    try {
+        const res = await fetch(url);
+        const data = await res.json();
+
+        if (data.warming) {
+            // Corrida rara: aquecimento iniciou durante o scan. Aguarda e reexecuta este painel.
+            setBadge(panel, 'loading', '⏳ aquecendo…');
+            await waitForWarm();
+            return runSingle(scanner);
+        }
+        if (data.error) {
+            setBadge(panel, 'error', '❌ erro');
+            body.innerHTML = `<p style="color:red">Erro: ${escapeHtml(data.error)}</p>`;
+            return;
+        }
+        if (!data.rows || data.rows.length === 0) {
+            setBadge(panel, 'empty', '— vazio');
+            body.innerHTML = '<p class="placeholder">Nenhum ativo encontrado.</p>';
+            return;
+        }
+
+        setBadge(panel, 'done', `✅ ${data.rows.length} ativos`);
+        renderTable(body, data.columns, data.rows);
+    } catch (e) {
+        setBadge(panel, 'error', '❌ rede');
+        body.innerHTML = `<p style="color:red">Erro de rede: ${escapeHtml(e.message)}</p>`;
     }
 }
 
 function setupEventListeners() {
-    const scannerSelect = document.getElementById('scanner-select');
-    const profileControls = document.getElementById('profile-controls');
     const customSliders = document.getElementById('custom-sliders');
     const radios = document.querySelectorAll('input[name="profile"]');
-    
-    scannerSelect.addEventListener('change', (e) => {
-        const scannerId = e.target.value;
-        const scanner = currentScanners.find(s => s.id === scannerId);
-        if (scanner && scanner.uses_profile) {
-            profileControls.style.display = 'block';
-        } else {
-            profileControls.style.display = 'none';
-        }
-    });
 
     radios.forEach(r => {
         r.addEventListener('change', (e) => {
@@ -61,7 +184,8 @@ function setupEventListeners() {
         });
     });
 
-    // Initialize default profile
+    // Initialize default profile (sliders só aparecem no modo Personalizado)
+    document.getElementById('custom-sliders').style.display = 'none';
     applyProfile("Conservador");
 
     // Sliders update labels
@@ -75,16 +199,16 @@ function setupEventListeners() {
             });
         }
     });
-    
+
     // DB Panel tabs
     document.querySelectorAll('.tab-btn').forEach(btn => {
         btn.addEventListener('click', (e) => {
             document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
             document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-            
+
             e.target.classList.add('active');
             document.getElementById(e.target.dataset.target).classList.add('active');
-            
+
             if (e.target.dataset.target === 'tab-fill') loadFill();
             if (e.target.dataset.target === 'tab-failures') loadFailures();
         });
@@ -93,14 +217,21 @@ function setupEventListeners() {
     document.getElementById('btn-load-bars').addEventListener('click', loadBars);
     document.getElementById('btn-refresh').addEventListener('click', refreshDB);
     document.getElementById('btn-warm').addEventListener('click', () => triggerWarm());
-    
-    document.getElementById('btn-run').addEventListener('click', runScanner);
+
+    document.getElementById('btn-run-all').addEventListener('click', startup);
+}
+
+function setRunAllButton(enabled) {
+    const btn = document.getElementById('btn-run-all');
+    if (!btn) return;
+    btn.disabled = !enabled;
+    btn.textContent = enabled ? '🔄 Atualizar Todos os Scanners' : '⏳ Executando…';
 }
 
 function applyProfile(profileName) {
     const p = PROFILES[profileName];
     if(!p) return;
-    
+
     document.getElementById('profile-desc').innerText = p.desc;
     document.getElementById('vol_ratio_min').value = p.vol_ratio;
     document.getElementById('val-vol').innerText = p.vol_ratio;
@@ -118,27 +249,38 @@ async function updateStatus() {
     try {
         const res = await fetch(`${BASE}/api/status`);
         const data = await res.json();
-        
-        document.getElementById('db-summary').innerText = data.summary;
-        
-        const wdiv = document.getElementById('warming-status');
-        if (data.warming) {
-            wdiv.style.display = 'block';
-            const wp = data.warm_progress;
-            const pct = wp.total > 0 ? Math.round((wp.done / wp.total) * 100) : 0;
-            document.getElementById('warm-pct').innerText = pct;
-            document.getElementById('warm-progress').value = pct;
-            document.getElementById('warm-detail').innerText = `${wp.done}/${wp.total} - ${wp.last_symbol}`;
-        } else {
-            wdiv.style.display = 'none';
-        }
+        updateStatusFrom(data);
     } catch (e) {
         console.error("Failed to update status", e);
     }
 }
 
+function updateStatusFrom(data) {
+    const dbSummary = document.getElementById('db-summary');
+    if (dbSummary) {
+        const s = data.summary;
+        if (s && typeof s === 'object') {
+            dbSummary.innerText = `${s.bars ?? 0} barras · ${s.distinct_symbols ?? 0} ativos · ${s.fill_state ?? 0} preenchidos · ${s.fetch_failures ?? 0} falhas`;
+        } else {
+            dbSummary.innerText = s || '';
+        }
+    }
+
+    const wdiv = document.getElementById('warming-status');
+    if (data.warming) {
+        wdiv.style.display = 'block';
+        const wp = data.warm_progress;
+        const pct = wp && wp.total > 0 ? Math.round((wp.done / wp.total) * 100) : 0;
+        document.getElementById('warm-pct').innerText = pct;
+        document.getElementById('warm-progress').value = pct;
+        document.getElementById('warm-detail').innerText = wp ? `${wp.done}/${wp.total} - ${wp.last_symbol}` : 'Aguarde...';
+    } else {
+        wdiv.style.display = 'none';
+    }
+}
+
 async function triggerWarm() {
-    await fetch(`${BASE}/api/warm`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}) });
+    await fetch(`${BASE}/api/warm`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ intervals: WARM_INTERVALS }) });
     updateStatus();
 }
 
@@ -146,69 +288,6 @@ async function refreshDB() {
     await fetch(`${BASE}/api/refresh`, { method: 'POST' });
     updateStatus();
     loadFill();
-}
-
-async function runScanner() {
-    const scannerId = document.getElementById('scanner-select').value;
-    if (!scannerId) {
-        alert("Selecione um scanner!");
-        return;
-    }
-    
-    const container = document.getElementById('table-results');
-    const countDiv = document.getElementById('results-count');
-    container.innerHTML = '<p>Executando scanner, aguarde...</p>';
-    countDiv.innerText = '';
-    document.getElementById('btn-run').disabled = true;
-
-    try {
-        let url = `${BASE}/api/scan?scanner=${scannerId}`;
-        
-        const scanner = currentScanners.find(s => s.id === scannerId);
-        if (scanner && scanner.uses_profile) {
-            const adx = document.getElementById('adx_min').value;
-            const rsi_min = document.getElementById('rsi_min').value;
-            const rsi_max = document.getElementById('rsi_max').value;
-            const vol_ratio = document.getElementById('vol_ratio_min').value;
-            const vol_medio = document.getElementById('vol_medio_min').value;
-            url += `&adx_min=${adx}&rsi_min=${rsi_min}&rsi_max=${rsi_max}&vol_ratio_min=${vol_ratio}&vol_medio_min=${vol_medio}`;
-        }
-
-        const res = await fetch(url);
-        const data = await res.json();
-
-        if (data.warming) {
-            container.innerHTML = '<p>⏳ O banco de dados está aquecendo (baixando cotações). O scanner será concluído quando o aquecimento terminar.</p>';
-            if (pollInterval) clearInterval(pollInterval);
-            pollInterval = setInterval(async () => {
-                const sRes = await fetch(`${BASE}/api/status`);
-                const sData = await sRes.json();
-                if (!sData.warming) {
-                    clearInterval(pollInterval);
-                    runScanner(); // Re-run when warm is done
-                }
-            }, 3000);
-            return;
-        }
-        
-        if (data.error) {
-            container.innerHTML = `<p style="color:red">Erro: ${data.error}</p>`;
-            return;
-        }
-
-        if (!data.rows || data.rows.length === 0) {
-            container.innerHTML = '<p>Nenhum ativo encontrado com os critérios selecionados.</p>';
-            return;
-        }
-
-        countDiv.innerHTML = `<strong>Encontrados: ${data.rows.length} ativos</strong>`;
-        renderTable(container, data.columns, data.rows);
-        
-    } catch (e) {
-        container.innerHTML = `<p style="color:red">Erro de rede: ${e.message}</p>`;
-    } finally {
-        document.getElementById('btn-run').disabled = false;
-    }
 }
 
 function renderTable(container, columns, rows) {
@@ -229,7 +308,7 @@ function renderTable(container, columns, rows) {
             let val = row[c.key];
             if (val === null || val === undefined) val = "";
             else if (typeof val === 'number') val = (val % 1 !== 0) ? val.toFixed(2) : val;
-            
+
             // Format checkmarks
             if (val === '✅') html += `<td style="color: #00c853;">${val}</td>`;
             else if (val === '❌') html += `<td style="color: #ff5252;">${val}</td>`;
@@ -249,7 +328,7 @@ function renderTable(container, columns, rows) {
 async function loadBars() {
     const sym = document.getElementById('bars-symbol').value;
     const int = document.getElementById('bars-interval').value;
-    const res = await fetch(`${BASE}/api/bars?symbol=${sym}&interval=${int}`);
+    const res = await fetch(`${BASE}/api/bars?symbol=${encodeURIComponent(sym)}&interval=${encodeURIComponent(int)}`);
     const data = await res.json();
     if(data.length > 0) {
         const cols = Object.keys(data[0]).map(k => ({key: k, label: k}));
@@ -279,6 +358,12 @@ async function loadFailures() {
     } else {
         document.getElementById('table-failures').innerHTML = '<p>Nenhuma falha registrada.</p>';
     }
+}
+
+function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, c => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    }[c]));
 }
 
 // Start
