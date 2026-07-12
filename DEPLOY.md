@@ -20,42 +20,54 @@ servidor **Phusion Passenger (DirectAdmin)** em `paulista.dev/scanner`.
 ## Fluxo normal de deploy
 
 ```
-1. git commit + git push
-2. ./deploy.sh
-```
-
-### 1. Commit e push
-
-```bash
-git add <arquivos>
-git commit -m "feat: ..."
-git push origin master
-```
-
-### 2. Deploy para o servidor
-
-```bash
 ./deploy.sh
 ```
 
-O script faz tudo: monta o stage, sobe via FTP (mirror não-destrutivo, preserva
-`scanner_web.db`) e verifica a API no final.
+O script `deploy.sh` faz tudo:
+1. Executa `./build.sh` (build de packages Linux)
+2. Para servidor local (se rodando)
+3. Sincroniza DB remoto → local (preserva dados aquecidos)
+4. Sobe arquivos da app (smart sync: apenas arquivos mudados)
+5. Sobe site-packages (apenas se build mudou)
+6. Verifica a API no final
 
-Se `requirements-py39.txt` mudou (nova/removida dependência), use `--full` para
-instalar as deps no venv remoto via SSH antes do upload:
+### Deploy forçado (se necessário)
 
 ```bash
-./deploy.sh --full
+./deploy.sh --force
 ```
+
+Força upload completo mesmo que nada mudou (útil após problemas).
 
 ---
 
 ## Pré-requisitos (uma vez por máquina)
 
 ```bash
-brew install lftp curl        # macOS
-cp .env.example .env          # preencha FTP_HOST / FTP_USER / FTP_PASS
+brew install lftp curl trash-cli  # macOS
+cp .env.example .env            # preencha FTP_HOST / FTP_USER / FTP_PASS
 ```
+
+---
+
+## Como funciona: build.sh + deploy.sh
+
+### `build.sh` - Build de packages Linux
+
+Compila packages compatíveis com Python 3.9 Linux (manylinux x86_64):
+- Download wheels para Python 3.9 Linux
+- Instala em `/tmp/scanner_linux_sitepackages/`
+- Cacheia wheels em `/tmp/scanner_wheels/` (reúso em builds seguintes)
+
+**Resultado**: ~128MB de packages prontos para deploy.
+
+### `deploy.sh` - Smart deploy
+
+Hash-based comparison para evitar uploads desnecessários:
+- **Hash do build** - Só sobe site-packages se o build mudou
+- **Hash dos arquivos** - Só sobe app files se mudaram
+- **`--only-newer`** - FTP só sobe arquivos mais recentes
+- **`--delete`** - Remove arquivos órfãos no servidor
 
 ---
 
@@ -72,7 +84,7 @@ cp .env.example .env          # preencha FTP_HOST / FTP_USER / FTP_PASS
 
 ### 🚫 NÃO subir (o script já ignora)
 
-- `scanner_web.db` — banco SQLite gerado em runtime. O mirror não-destrutivo preserva o remoto.
+- `scanner_web.db` — banco SQLite gerado em runtime. Preservado pelo sync.
 - `__pycache__/`, `*.pyc`, `venv39/`, `venv313/`
 - `scanner_interface_Streamlit.py`, `scanner_abertura.py`, `painel_bd.py` — Streamlit dormentes.
 - `*.txt` (transcrições), `tools/`, `scanner.db` (versão 3.13 do `streamlit-legacy`)
@@ -146,12 +158,12 @@ curl -s https://paulista.dev/scanner/api/status | python3 -m json.tool
 
 ## Troubleshooting
 
-- **500 / tela branca após deploy** — dep faltando (rode `./deploy.sh --full`) ou
-  `.env` ausente no servidor.
+- **500 / Internal Server Error** —_deps incompatíveis ou `.env` ausente.
 - **Restart não pegou** — reenvie `tmp/restart.txt` (seção acima).
 - **Timeout no `/api/scan`** — dispare `/api/warm` e aguarde.
-- **Mirror apagou o DB** — você usou `ftp_sync.sh --delete`. Dispare o warm ou restaure via upload.
-- **`421` / limite de conexões no lftp** — reduza `--parallel` (ex.: `4`).
+- **Mirror apagou o DB** — use sync DB (seção acima).
+- **Build lento** — wheels são cacheados, builds seguintes são rápidos.
+- **Deploy re-upando tudo** — use `--force` apenas se necessário.
 
 ---
 
@@ -159,3 +171,15 @@ curl -s https://paulista.dev/scanner/api/status | python3 -m json.tool
 
 - `.env` guarda a senha FTP — nunca commitar (`.gitignore` já cobre).
 - O toolkit `~/scripts/ftp_*.sh` embute credenciais no topo — `chmod 700` em máquina compartilhada.
+
+---
+
+## Arquitetura do branch `vanilla-web-scanner`
+
+Este branch é um **paralelo** ao `master`:
+- **Python 3.9** (pinned em `.python-version`)
+- **Flask/WSGI** (sem Streamlit)
+- **Deploy automático** via `build.sh` + `deploy.sh`
+- **Sem pandas_ta/numba** (indicadores reimplementados em pandas puro)
+
+**NUNCA merge este branch de volta no `master`** — mantenha isolado.

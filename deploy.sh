@@ -8,6 +8,11 @@ cd "$SCRIPT_DIR"
 set -a; . ./.env; set +a
 echo "Deploy -> $FTP_USER@$FTP_HOST"
 
+# 0. Build Linux site-packages (if needed)
+echo ""
+echo "==> Building Linux site-packages..."
+./build.sh
+
 # 1. Stop local server if running
 echo ""
 echo "==> Parando servidor local (se rodando)..."
@@ -38,24 +43,70 @@ date > "$STAGE/tmp/restart.txt"
 echo "   Stage: $STAGE"
 echo "   Files: $(find "$STAGE" -type f | wc -l | tr -d ' ')"
 
-# 4. Install deps on server (--full flag)
-if [[ "${1:-}" == "--full" ]]; then
-  echo ""
-  echo "==> Instalando deps no servidor..."
-  ssh paulista@paulista.dev \
-    '/home/paulista/virtualenv/scanner/3.9/bin/pip install -r ~/scanner/requirements-py39.txt'
+# 4. Upload site-packages to server virtualenv (only if build changed)
+echo ""
+echo "==> Subindo site-packages para virtualenv..."
+BUILD_DIR="/tmp/scanner_linux_sitepackages"
+BUILD_MARKER="/tmp/scanner_build_marker"
+FORCE_DEPLOY=false
+
+if [[ "${1:-}" == "--force" ]]; then
+  FORCE_DEPLOY=true
+  echo "   Modo force ativado — sobrescrevendo tudo."
 fi
 
-# 5. Upload via FTP (non-destructive mirror — preserves scanner_web.db)
+if [ -d "$BUILD_DIR" ]; then
+  # Check if build actually changed by comparing markers
+  CURRENT_HASH=$(find "$BUILD_DIR" -type f -exec sha1sum {} \; | sort | sha1sum | cut -d' ' -f1)
+  PREVIOUS_HASH=""
+  if [ -f "$BUILD_MARKER" ]; then
+    PREVIOUS_HASH=$(cat "$BUILD_MARKER")
+  fi
+
+  if [ "$FORCE_DEPLOY" = true ] || [ "$CURRENT_HASH" != "$PREVIOUS_HASH" ]; then
+    if [ "$FORCE_DEPLOY" = true ]; then
+      echo "   Forçando upload de site-packages..."
+    else
+      echo "   Build mudou, subindo site-packages..."
+    fi
+    lftp -u "$FTP_USER","$FTP_PASS" "ftp://$FTP_HOST" <<EOF
+set ftp:passive-mode on
+set net:timeout 120
+set net:max-retries 3
+mirror --reverse --ignore-time --parallel=4 $BUILD_DIR /virtualenv/scanner/3.9/lib/python3.9/site-packages
+bye
+EOF
+    echo "$CURRENT_HASH" > "$BUILD_MARKER"
+    echo "   Site-packages atualizado."
+  else
+    echo "   Build não mudou, pulando site-packages."
+  fi
+else
+  echo "   ERRO: build directory not found. Run ./build.sh first."
+  exit 1
+fi
+
+# 5. Upload via FTP (smart sync — only uploads changed files)
 echo ""
-echo "==> Subindo para /scanner..."
+echo "==> Subindo para /scanner (apenas arquivos mudados)..."
+APP_MARKER="/tmp/scanner_app_marker"
+CURRENT_APP_HASH=$(find app.py static/ -type f -exec sha1sum {} \; | sort | sha1sum | cut -d' ' -f1)
+PREVIOUS_APP_HASH=""
+
+if [ -f "$APP_MARKER" ]; then
+  PREVIOUS_APP_HASH=$(cat "$APP_MARKER")
+fi
+
 lftp -u "$FTP_USER","$FTP_PASS" "ftp://$FTP_HOST" <<EOF
 set ftp:passive-mode on
 set net:timeout 60
 set net:max-retries 3
-mirror --reverse --only-newer --verbose --parallel=6 $STAGE /scanner
+mirror --reverse --delete --only-newer --ignore-time --parallel=4 --verbose $STAGE /scanner
 bye
 EOF
+
+echo "$CURRENT_APP_HASH" > "$APP_MARKER"
+echo "   App files sincronizados."
 
 # 6. Verify
 echo ""
