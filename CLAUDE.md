@@ -2,24 +2,15 @@
 
 Guidance for Claude Code working in this repository.
 
-> ## ⚠️ BRANCH `vanilla-web-scanner` — DO NOT EVER MERGE BACK INTO `master`
->
-> This branch is a **divergent, parallel** port and MUST stay isolated. It re-pins the
-> project to **Python 3.9**, drops `pandas_ta`/`numba`/`streamlit`, and changes
-> `.python-version`, `requirements*`, and adds new files. Merging it into `master`
-> would clobber the 3.13 / Streamlit source of truth. **Never merge, rebase onto, or
-> cherry-pick from this branch into `master`.** Keep changes confined here. (The legacy
-> notice below that says "do not assume Python 3.9 / Flask" describes `master` — on
-> THIS branch that is exactly what we are.)
->
-> See **"Arquitetura deste branch"** below for the vanilla-web stack.
+## Arquitetura (`master` — app web Flask/WSGI)
 
-## Arquitetura deste branch (`vanilla-web-scanner`)
-
-Porte **full-parity** do scanner para **HTML/JS vanilla + backend Flask/WSGI**, para
-deploy em **Phusion Passenger (DirectAdmin)** em `paulista.dev/scanner`, que roda
-**Python 3.9.19** (virtualenv `/home/paulista/virtualenv/scanner/3.9/`, app root
-`/home/paulista/scanner`). O master é Streamlit em 3.13; este branch é a versão web.
+O `master` é o scanner em **HTML/JS vanilla + backend Flask/WSGI**, para deploy em
+**Phusion Passenger (DirectAdmin)** em `paulista.dev/scanner`, que roda **Python 3.9.19**
+(virtualenv `/home/paulista/virtualenv/scanner/3.9/`, app root
+`/home/paulista/scanner`). A interface Streamlit (Python 3.13 / `pandas_ta`) é legado
+dormente: os arquivos `scanner_interface_Streamlit.py`, `scanner_abertura.py`,
+`painel_bd.py` permanecem no repo mas **não rodam em 3.9** e não são usados pelo app web;
+a linhagem Streamlit viva sobrevive no branch `streamlit-legacy` / `origin/master`.
 
 - **Python 3.9** (pinned em `.python-version` = `3.9`). Use o `venv39/` virtualenv:
   `venv39/bin/python`, `venv39/bin/python app.py`. Deps em `requirements-py39.txt`
@@ -41,35 +32,30 @@ deploy em **Phusion Passenger (DirectAdmin)** em `paulista.dev/scanner`, que rod
 - **Frontend vanilla** (`static/index.html`, `static/app.js`, `static/style.css`): sem
   build, sem framework — `fetch` + render de tabelas genérico. Montado em subpath
   `/scanner`: URLs derivadas de `window.location.pathname` (mount-agnostic).
-- **Módulos reaproveitados do master, sem mudanças**: [`data_layer.py`](data_layer.py),
+- **Módulos framework-agnostic**: [`data_layer.py`](data_layer.py),
   [`symbol_store.py`](symbol_store.py), [`symbols_fallback.py`](symbols_fallback.py)
-  (framework-agnostic e portáveis a 3.9).
-- **Arquivos Streamlit dormantes neste branch**: `scanner_interface_Streamlit.py`,
-  `scanner_abertura.py`, `painel_bd.py` — permanecem no repo, **não são importáveis
-  em 3.9** (sem pandas_ta/streamlit) e não são usados pelo app web. `master` segue como
-  fonte de verdade deles.
+  — compartilhados com o legado Streamlit, portáveis a 3.9.
 - Deploy: ver [`passenger_README.md`](passenger_README.md). Local: `./run_web.sh` ou
   `venv39/bin/python app.py`.
 
-## Environment (master branch — referência)
-
-- **Python 3.13** (pinned in `.python-version`). Use the `venv313/` virtualenv:
-  `venv313/bin/python`, `venv313/bin/streamlit`, etc.
-- Do **not** assume Python 3.9 or a Flask/WSGI server — that was an abandoned approach
-  and is no longer accurate. The app is **Streamlit**, running on 3.13, on the `master`
-  branch (the only branch).
-- `pandas_ta` **is** installed and is used by the scanners
-  (e.g. `import pandas_ta as ta` in `scanner_interface_Streamlit.py`).
-
 ## What this is
 
-A Streamlit scanner for B3 (Brazilian) equities. It screens ~300+ tickers (stocks,
-BDRs, ETFs, FIIs) across four timeframes (1d, 1h, 30m, 15m) using momentum/trend/volume
-filters, producing candidates for manual or downstream-AI analysis. Market data comes
-from `yfinance` (tickers use the `.SA` suffix). See `DELISTED_SYMBOLS.md` for tickers
-removed from Yahoo.
+A scanner for B3 (Brazilian) equities. The active app on `master` is the **Flask/WSGI
+web scanner** (vanilla JS frontend); a **Streamlit** UI exists as dormant legacy (see
+`streamlit-legacy`). It screens ~300+ tickers (stocks, BDRs, ETFs, FIIs) across four
+timeframes (1d, 1h, 30m, 15m) using momentum/trend/volume filters, producing candidates
+for manual or downstream-AI analysis. Market data comes from `yfinance` (tickers use the
+`.SA` suffix). See `DELISTED_SYMBOLS.md` for tickers removed from Yahoo.
 
 ## Running
+
+Web app (`master`, Python 3.9):
+
+```
+./run_web.sh                  # ou: venv39/bin/python app.py
+```
+
+Legacy Streamlit (branch `streamlit-legacy`, Python 3.13 — `pandas_ta` required):
 
 ```
 venv313/bin/streamlit run scanner_interface_Streamlit.py   # 8 scanners (Legacy + Evolved)
