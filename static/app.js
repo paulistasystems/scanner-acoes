@@ -47,11 +47,19 @@ function buildGrid() {
         panel.innerHTML = `
             <header>
                 <span class="panel-name">${escapeHtml(s.name)}</span>
-                <span class="panel-badge loading">⏳ aguardando</span>
+                <div class="panel-actions">
+                    <button class="btn-copy-analysis" style="display: none;">📋 Copiar Análise</button>
+                    <span class="panel-badge loading">⏳ aguardando</span>
+                </div>
             </header>
             <div class="table-container"></div>
         `;
         (s.uses_profile ? profileGrid : fixedGrid).appendChild(panel);
+
+        const copyBtn = panel.querySelector('.btn-copy-analysis');
+        if (copyBtn) {
+            copyBtn.addEventListener('click', () => handleCopyClick(panel, s));
+        }
     });
 }
 
@@ -125,6 +133,9 @@ async function runSingle(scanner) {
     const panel = panelFor(scanner.id);
     if (!panel) return;
     const body = panel.querySelector('.table-container');
+    const copyBtn = panel.querySelector('.btn-copy-analysis');
+    if (copyBtn) copyBtn.style.display = 'none';
+
     setBadge(panel, 'loading', '⏳ executando…');
     body.innerHTML = '';
 
@@ -158,6 +169,9 @@ async function runSingle(scanner) {
             body.innerHTML = '<p class="placeholder">Nenhum ativo encontrado.</p>';
             return;
         }
+
+        panel.lastResults = { columns: data.columns, rows: data.rows };
+        if (copyBtn) copyBtn.style.display = 'inline-block';
 
         setBadge(panel, 'done', `✅ ${data.rows.length} ativos`);
         renderTable(body, data.columns, data.rows);
@@ -364,6 +378,109 @@ function escapeHtml(s) {
     return String(s).replace(/[&<>"']/g, c => ({
         '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
     }[c]));
+}
+
+function formatarResultadosParaTexto(columns, rows) {
+    if (!rows || rows.length === 0) {
+        return "Não há setups de compra válidos no momento.";
+    }
+    return rows.map(row => {
+        const pares = [];
+        columns.forEach(col => {
+            let val = row[col.key];
+            let valStr = "";
+            if (val === null || val === undefined || (typeof val === 'number' && isNaN(val))) {
+                valStr = "N/A";
+            } else if (typeof val === 'number') {
+                valStr = (val % 1 !== 0) ? val.toFixed(2) : val.toString();
+            } else {
+                valStr = String(val);
+            }
+            pares.push(`${col.label}: ${valStr}`);
+        });
+        return pares.join(" | ");
+    }).join("\n");
+}
+
+function handleCopyClick(panel, scanner) {
+    if (!panel.lastResults) return;
+    const { columns, rows } = panel.lastResults;
+    const copyBtn = panel.querySelector('.btn-copy-analysis');
+
+    const promptTrader = `### Você é um trader profissional de Intraday e Swing curto prazo no mercado brasileiro.
+
+**Regras de Análise (obedeça rigorosamente):**
+- Timeframe principal: 1 hora
+- Timeframe auxiliar: 30 minutos
+- Estilo: Intraday ou Swing de 1 a 3 dias (posso carregar overnight)
+- Risco máximo por trade: 1% do capital
+- Risk:Reward mínimo obrigatório: **1:2**
+- **Só liste setups de COMPRA válidos** (nada de venda ou short)
+- Só recomende entrada se Score ≥ 65 e haja boa confluência entre 1h e 30m
+
+**Responda EXATAMENTE neste formato:**
+
+### ANÁLISE FINAL
+
+**Setups de Compra Válidos (em ordem de prioridade):**
+
+**XXXX** → **Score: XX/100**
+**Entrada Sugerida:** R$ XXXX
+**Stop Loss:** R$ XXXX (-X.X%)
+**Target 1:** R$ XXXX (+X.X% | R:R 1:2)
+**Target 2:** R$ XXXX (+X.X% | R:R 1:3)
+**Confluência 1h + 30m:**
+**Forças principais:**
+**Fraquezas / Riscos:**
+**Estratégia sugerida:**
+
+**Setups para Monitorar (sem confluência suficiente):**
+XXXX → Motivo breve
+
+**Resumo Geral:**
+**Viés do mercado hoje:**
+**Nível de risco do dia (Baixo / Médio / Alto):**
+**Melhor horário para entrada:**
+
+Seja objetivo, direto e conservador. Se não houver setups bons, diga claramente "Não há setups de compra válidos no momento."
+
+---
+
+**Dados do Scanner (cole aqui todo o output do scanner):**
+
+`;
+
+    const dadosTextuais = formatarResultadosParaTexto(columns, rows);
+    let configSliders = "";
+
+    if (scanner.uses_profile) {
+        const profile = document.querySelector('input[name="profile"]:checked').value;
+        const vol = document.getElementById('vol_ratio_min').value;
+        const adx = document.getElementById('adx_min').value;
+        const rsiMin = document.getElementById('rsi_min').value;
+        const rsiMax = document.getElementById('rsi_max').value;
+
+        configSliders = `\n\n---\n**Scanner:** ${scanner.name}\n**Perfil:** ${profile}\n\n**Configuração dos Filtros Utilizados:**\n• Volume Ratio Mínimo: ${vol}\n• ADX Mínimo: ${adx}\n• RSI Mínimo: ${rsiMin}\n• RSI Máximo: ${rsiMax}`;
+    } else {
+        configSliders = `\n\n---\n**Scanner:** ${scanner.name}\n\n**Filtros:** Este scanner utiliza filtros internos próprios (configurações fixas incorporadas no scanner)`;
+    }
+
+    const textToCopy = promptTrader + dadosTextuais + configSliders;
+
+    navigator.clipboard.writeText(textToCopy).then(() => {
+        const originalText = copyBtn.textContent;
+        copyBtn.textContent = '✅ Copiado!';
+        copyBtn.style.background = 'linear-gradient(135deg, #059669, #047857)';
+        copyBtn.style.color = '#fff';
+        setTimeout(() => {
+            copyBtn.textContent = originalText;
+            copyBtn.style.background = '';
+            copyBtn.style.color = '';
+        }, 2000);
+    }).catch(err => {
+        console.error('Erro ao copiar para clipboard:', err);
+        alert('Erro ao copiar automaticamente.');
+    });
 }
 
 // Start
