@@ -14,30 +14,7 @@ echo "Deploy -> $FTP_USER@$FTP_HOST"
 #    deploys só-de-código não tocam no build.
 #    Pré-requisito: BUILD_DIR (/tmp/scanner_linux_sitepackages) deve existir.
 
-# 1+2. Sync DB: download remoto -> local (preserva dados aquecidos).
-#      Só derruba o app local SE o sync trouxer dados de fato — baixar nada
-#      não justifica parar o servidor local.
-echo ""
-echo "==> Sincronizando banco de dados..."
-DB_TMP="scanner.db.tmp"
-if curl -fs --user "$FTP_USER:$FTP_PASS" \
-    "ftp://$FTP_HOST/scanner/scanner.db" -o "$DB_TMP"; then
-  if [ -s "$DB_TMP" ]; then
-    echo "   Banco remoto baixado: $(ls -lh "$DB_TMP" | awk '{print $5}')"
-    echo "==> Parando servidor local (para troca do banco)..."
-    pkill -f "python app.py" 2>/dev/null && echo "   Servidor parado." || echo "   Nenhum servidor local rodando."
-    mv -f "$DB_TMP" scanner.db
-    echo "   scanner.db atualizado."
-  else
-    rm -f "$DB_TMP"
-    echo "   Banco remoto vazio — nada a sincronizar. Servidor local intocado."
-  fi
-else
-  rm -f "$DB_TMP" 2>/dev/null || true
-  echo "   Banco remoto ausente ou inacessivel — continuando sem sync. Servidor local intocado."
-fi
-
-# 3. Stage
+# 1. Stage
 echo ""
 echo "==> Montando stage..."
 STAGE=$(mktemp -d)
@@ -53,7 +30,7 @@ date > "$STAGE/tmp/restart.txt"
 echo "   Stage: $STAGE"
 echo "   Files: $(find "$STAGE" -type f | wc -l | tr -d ' ')"
 
-# 4. Upload site-packages to server virtualenv (only if build changed)
+# 2. Upload site-packages to server virtualenv (only if build changed)
 echo ""
 echo "==> Subindo site-packages para virtualenv..."
 BUILD_DIR="/tmp/scanner_linux_sitepackages"
@@ -96,7 +73,7 @@ else
   exit 1
 fi
 
-# 5. Upload via FTP (smart sync — only uploads changed files)
+# 3. Upload via FTP (smart sync — only uploads changed files)
 echo ""
 echo "==> Subindo para /scanner (apenas arquivos mudados)..."
 APP_MARKER="/tmp/scanner_app_marker"
@@ -121,7 +98,7 @@ else
   echo "   App files não mudaram, pulando sincronização."
 fi
 
-# 6. Verify
+# 4. Verify
 echo ""
 echo "==> Verificando..."
 sleep 2
