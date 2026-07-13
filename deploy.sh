@@ -112,7 +112,7 @@ if [ "$FORCE_DEPLOY" = true ] || [ "$CURRENT_APP_HASH" != "$PREVIOUS_APP_HASH" ]
 set ftp:passive-mode on
 set net:timeout 60
 set net:max-retries 3
-mirror --reverse --delete --only-newer --parallel=4 --verbose $STAGE /scanner
+mirror --reverse --delete --only-newer --parallel=4 --verbose -X 'scanner.db*' -X '*.log' $STAGE /scanner
 bye
 EOF
   echo "$CURRENT_APP_HASH" > "$APP_MARKER"
