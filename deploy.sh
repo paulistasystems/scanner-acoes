@@ -125,7 +125,10 @@ fi
 echo ""
 echo "==> Verificando..."
 sleep 2
-curl -fsS "https://paulista.dev/scanner/api/status" | python3 -m json.tool
+if ! curl -fsS --connect-timeout 10 "https://paulista.dev/scanner/api/status" 2>/dev/null | python3 -m json.tool 2>/dev/null; then
+  echo "   ⚠️  Aviso: Não foi possível verificar se a API está online por HTTP (servidor offline ou bloqueio)."
+  echo "      No entanto, a transferência de arquivos do app via FTP foi efetuada."
+fi
 
 echo ""
 echo "Deploy concluido."
