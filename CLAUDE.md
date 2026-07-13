@@ -26,9 +26,14 @@ a linhagem Streamlit viva sobrevive no branch `streamlit-legacy` / `origin/maste
 - **`scanners_core.py`**: lógica dos 8 scanners + Abertura extraída dos arquivos
   Streamlit, **sem** acoplamento a streamlit/pandas_ta (usa `indicators` + `data_layer`).
 - **`warming.py`**: worker em background que roda `data_layer.prewarm()` (fetches lentos
-  do Yahoo). Cada request HTTP só **lê o banco** (rápido, <2s) e reporta progresso; o
-  frontend faz poll. Isso evita timeout do Passenger (Universal = 220+ ativos ×
-  intervalos = 5–15 min, bem acima do limite de ~120s por request).
+  do Yahoo). **Funciona em dev** (`run_web.sh`, processo Flask persistente). **Em produção
+  (Passenger/LiteSpeed) a thread daemon é ceifada quando o processo é reciclado logo após
+  a request responder** — trava no primeiro item (`done=1`, `finished_at=None`) com
+  `ReadTimeout` no egress, deixando `bars=0` e os scanners vazios. Por isso o aquecimento
+  do `scanner.db` em produção é feito por **cron** via [`warm_cron.py`](warm_cron.py)
+  (processo autônomo, não sofre o freeze). Cada request HTTP só **lê o banco** (rápido,
+  <2s); o frontend faz poll de `/api/status`. Detalhes em
+  "Aquecimento: local vs. produção" abaixo.
 - **Frontend vanilla** (`static/index.html`, `static/app.js`, `static/style.css`): sem
   build, sem framework — `fetch` + render de tabelas genérico. Montado em subpath
   `/scanner`: URLs derivadas de `window.location.pathname` (mount-agnostic).
@@ -37,6 +42,41 @@ a linhagem Streamlit viva sobrevive no branch `streamlit-legacy` / `origin/maste
   — compartilhados com o legado Streamlit, portáveis a 3.9.
 - Deploy: ver [`passenger_README.md`](passenger_README.md). Local: `./run_web.sh` ou
   `venv39/bin/python app.py`.
+
+## Aquecimento: local vs. produção (Passenger)
+
+O `scanner.db` é a fonte única de verdade; `data_layer.prewarm()` é o passo de aquisição
+(retry + log de falhas, idempotente via `_is_filled`). Há **dois modos** de dispará-lo:
+
+- **Dev (`run_web.sh`):** `warming.start_warm()` sobe uma thread daemon que roda `prewarm`
+  no processo Flask persistente — completa normalmente; o progresso aparece no frontend.
+- **Produção (`paulista.dev/scanner`, Passenger/LiteSpeed):** a mesma thread daemon **não
+  sobrevive** — o Passenger recicla o processo logo após a request HTTP responder, a thread
+  é congelada/morta e o `requests.get` do egress recebe `ReadTimeout` (25s). Sintoma
+  observado: `warm_state {done:1, finished_at:null}`, `bars:0`. Por isso o aquecimento em
+  produção roda via **cron** (DirectAdmin) executando `warm_cron.py`, que chama
+  `data_layer.prewarm()` direto contra o `scanner.db` compartilhado — processo autônomo,
+  sem Passenger, sem freeze. O app web só lê o DB.
+
+Egress do Yahoo: `data_layer._fetch_chart_direct` aponta para o proxy PHP
+(`SCANNER_CHART_URL=https://paulista.dev/yahoo_chart.php` em `/scanner/.env`), porque o
+bootstrap crumb do `yfinance` recebe 401 no IP do servidor; o endpoint público
+`/v8/finance/chart` responde sem crumb. O proxy (`php/yahoo_chart.php`, deployado na raiz
+do domínio, **idêntico ao do repo**) só repassa a chamada (não é a causa do travamento —
+o problema é exclusivamente a thread do Passenger).
+
+Cron sugerido (DirectAdmin; `warm_cron.py` tem lock `fcntl` portável, dispensa `flock`):
+
+```
+*/10 10-17 * * 1-5  cd /home/paulista/scanner && \
+    /home/paulista/virtualenv/scanner/3.9/bin/python warm_cron.py \
+    >> /home/paulista/scanner/tmp/warm_cron.log 2>&1
+```
+
+Após cada deploy/restart, rode `warm_cron.py` manualmente uma vez (bootstrap) — até a
+primeira execução do cron o DB fica vazio e o frontend tenta o `POST /api/warm` (thread
+que morre; inofensiva). Com `fill_state > 0`, o `startup()` do frontend pula o warm e lê o
+DB direto.
 
 ## What this is
 

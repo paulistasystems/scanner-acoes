@@ -29,8 +29,9 @@ cp .env.example .env   # preencher SUPABASE_URL e SUPABASE_ANON_KEY
 venv39/bin/python app.py   # sobe em http://localhost:5001
 ```
 
-O primeiro acesso dispara o warming automático (download dos ~220 ativos × intervalos
-via Yahoo Finance). O progresso aparece na barra de status do frontend.
+O primeiro acesso dispara o warming em background (`warming.py`). Em **dev** (processo
+Flask persistente) ele completa e o progresso aparece na barra de status. Em **produção**
+o warming é por **cron** — a thread do `warming.py` morre no Passenger (ver seção Deploy).
 
 ## Variáveis de ambiente
 
@@ -85,9 +86,22 @@ SCANNER_DB=/home/paulista/scanner.db
 
 Reinicie a aplicação no painel e acesse `https://paulista.dev/scanner`.
 
-Na primeira visita o frontend dispara `POST /api/warm` automaticamente. Acompanhe o
-progresso pela barra de status — o warming completo leva 5–15 min (220+ ativos).
-Após concluir, todos os scanners ficam disponíveis sem re-fetch até o próximo `/api/refresh`.
+**Atenção — warming em produção é via cron, não pelo frontend.** O `POST /api/warm`
+(disparado pelo frontend na primeira visita) roda numa thread daemon que **morre no
+Passenger**: o processo é reciclado logo após a request, a thread recebe `ReadTimeout`
+no egress e o `scanner.db` fica vazio (`bars=0`). Por isso, em produção, agende
+`warm_cron.py` no cron do DirectAdmin — processo autônomo que chama
+`data_layer.prewarm()` direto no `scanner.db` compartilhado (`warm_cron.py` tem lock
+`fcntl`, não precisa de `flock` no shell):
+
+```
+*/10 10-17 * * 1-5  cd /home/paulista/scanner && \
+    /home/paulista/virtualenv/scanner/3.9/bin/python warm_cron.py \
+    >> /home/paulista/scanner/tmp/warm_cron.log 2>&1
+```
+
+Logo após o deploy/restart, rode `warm_cron.py` uma vez manualmente para bootstrap.
+Acompanhe pelo log (`tmp/warm_cron.log`) e pelo painel `/api/failures`.
 
 ## Scanners disponíveis
 
@@ -124,7 +138,7 @@ venv39/bin/python tools/check_indicators.py compare tools/_ref.json tools/_new.j
 | GET | `/api/scanners` | Lista os scanners disponíveis |
 | GET | `/api/scan?scanner=&adx_min=&rsi_min=&rsi_max=&vol_ratio_min=&vol_medio_min=` | Executa um scanner |
 | GET | `/api/status` | Status do warming + resumo do banco |
-| POST | `/api/warm` | Inicia o warming em background (body: `{"intervals": "1d,1h,30m"}`) |
+| POST | `/api/warm` | Inicia warming em background — **só funciona em dev** (no Passenger a thread morre; em produção use `warm_cron.py` via cron) |
 | POST | `/api/refresh` | Invalida o fill state (força re-fetch na próxima execução) |
 | GET | `/api/fill_state` | Estado de preenchimento por símbolo/intervalo |
 | GET | `/api/failures` | Símbolos que falharam no última warm |

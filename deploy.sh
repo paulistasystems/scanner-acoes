@@ -45,7 +45,7 @@ mkdir -p "$STAGE/static" "$STAGE/tmp"
 
 # Preserve original modification times (mtime) so LFTP doesn't think files changed
 cp -p app.py passenger_wsgi.py scanners_core.py warming.py indicators.py \
-   data_layer.py symbol_store.py symbols_fallback.py "$STAGE/"
+   data_layer.py symbol_store.py symbols_fallback.py warm_cron.py "$STAGE/"
 cp -p static/app.js static/index.html static/style.css "$STAGE/static/"
 cp -p requirements-py39.txt .python-version .env "$STAGE/"
 date > "$STAGE/tmp/restart.txt"

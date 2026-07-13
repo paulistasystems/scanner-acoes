@@ -16,6 +16,9 @@ scanner.db
 scanner.db-shm
 scanner.db-wal
 
+# Runtime: logs do warm_cron, restart.txt do Passenger, etc.
+tmp/
+
 # Artefatos de sessão do Claude Code
 EnterPlanMode*
 tools/_*.json
