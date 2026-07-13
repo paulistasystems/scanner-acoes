@@ -76,4 +76,51 @@ if ($body === false || $err !== '') {
 
 // Pass-through do corpo do Yahoo (raw). O Python faz parse + normalização.
 http_response_code((int)$info['http_code'] ?: 502);
+// Write-through: grava o JSON cru no scanner.db (tabela chart_cache) se o fetch deu
+// OK. Best-effort — falha silenciosa se SQLite/DB indisponível (o relay segue intacto).
+if ((int)$info['http_code'] === 200 && $symbol !== '' && isset($_GET['interval'])) {
+    _scanner_cache_put($symbol, $_GET['interval'], $body);
+}
 echo $body;
+
+
+// ----------------- chart_cache write-through (scanner.db) -----------------
+// O proxy é o único EGRESS para o Yahoo em produção; cada fetch também persiste o
+// JSON cru no SQLite (tabela chart_cache). O data_layer (Python) só LÊ este cache e
+// faz a normalização (auto-adjust/tz/índice) — assim o PHP "atualiza o banco direto"
+// sem duplicar a lógica de indicadores (sem risco de divergência). Como o aquecimento
+// roda via cron (assíncrono, sequencial), não há lock entre escritores concorrentes;
+// WAL + busy_timeout do SQLite tolera o resto.
+function _scanner_db_path(): ?string {
+    $env = getenv('SCANNER_DB');
+    if ($env && @is_file($env)) return $env;
+    $prod = '/home/paulista/scanner/scanner.db';     // proxy na raiz do domínio
+    if (@is_file($prod)) return $prod;
+    $local = __DIR__ . '/../scanner.db';             // dev: php/ sob o repo
+    if (@is_file($local)) return $local;
+    return null;
+}
+
+function _scanner_cache_put(string $symbol, string $interval, string $body): void {
+    $db = _scanner_db_path();
+    if ($db === null || $body === '') return;
+    if (!extension_loaded('pdo_sqlite')) return;     // hospedagem sem SQLite -> só relay
+    try {
+        $pdo = new PDO('sqlite:' . $db);
+        $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_SILENT);
+        $pdo->exec('PRAGMA busy_timeout=5000');
+        $pdo->exec('PRAGMA journal_mode=WAL');
+        $pdo->exec("CREATE TABLE IF NOT EXISTS chart_cache (
+            symbol TEXT NOT NULL, interval TEXT NOT NULL,
+            fetched_at TEXT NOT NULL, payload TEXT NOT NULL,
+            PRIMARY KEY(symbol, interval))");
+        // INSERT OR REPLACE: compatível com qualquer SQLite (sem depender de UPSERT).
+        $stmt = $pdo->prepare(
+            "INSERT OR REPLACE INTO chart_cache(symbol, interval, fetched_at, payload)
+             VALUES(:s, :i, :t, :p)");
+        $stmt->execute([':s' => $symbol, ':i' => $interval,
+                        ':t' => date('c'), ':p' => $body]);
+    } catch (Throwable $e) {
+        // best-effort: cache é otimização, nunca pode quebrar o relay.
+    }
+}

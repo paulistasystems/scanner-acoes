@@ -65,6 +65,14 @@ bootstrap crumb do `yfinance` recebe 401 no IP do servidor; o endpoint público
 do domínio, **idêntico ao do repo**) só repassa a chamada (não é a causa do travamento —
 o problema é exclusivamente a thread do Passenger).
 
+Cache write-through (`chart_cache`): o `yahoo_chart.php` também grava o JSON cru do Yahoo
+na tabela `chart_cache` do `scanner.db` (PDO_SQLITE, best-effort — falha silenciosa se
+SQLite/DB indisponível). O `data_layer._fetch_chart_direct` é **cache-first**: lê o
+`chart_cache` antes de ir à rede; a normalização (auto-adjust/tz) continua no Python, então
+o PHP "atualiza o banco direto" sem portar a lógica de indicadores (sem risco de
+divergência). O `prewarm` passa `use_cache=False` para forçar refresh; a leitura sob
+demanda usa o cache. `invalidate()` (botão refresh) limpa `chart_cache` também.
+
 Cron sugerido (DirectAdmin; `warm_cron.py` tem lock `fcntl` portável, dispensa `flock`):
 
 ```
