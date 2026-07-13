@@ -84,24 +84,24 @@ Hash-based comparison para evitar uploads desnecessários:
 
 ### 🚫 NÃO subir (o script já ignora)
 
-- `scanner_web.db` — banco SQLite gerado em runtime. Preservado pelo sync.
+- `scanner.db` — banco SQLite gerado em runtime. Preservado pelo sync.
 - `__pycache__/`, `*.pyc`, `venv39/`, `venv313/`
 - `scanner_interface_Streamlit.py`, `scanner_abertura.py`, `painel_bd.py` — Streamlit dormentes.
-- `*.txt` (transcrições), `tools/`, `scanner.db` (versão 3.13 do `streamlit-legacy`)
+- `*.txt` (transcrições), `tools/`
 
 ---
 
 ## Sincronizar o banco SQLite (opcional)
 
-O `scanner_web.db` **não é versionado**. Para preservar dados aquecidos:
+O `scanner.db` **não é versionado**. Para preservar dados aquecidos:
 
 ### Download remoto → local
 
 ```bash
 set -a; . ./.env; set +a
 curl -s --user "$FTP_USER:$FTP_PASS" \
-  "ftp://$FTP_HOST/scanner/scanner_web.db" -o scanner_web.db
-ls -lh scanner_web.db
+  "ftp://$FTP_HOST/scanner/scanner.db" -o scanner.db
+ls -lh scanner.db
 ```
 
 ### Upload local → remoto (pré-aquecer servidor a partir do warm local)
@@ -109,7 +109,7 @@ ls -lh scanner_web.db
 ```bash
 set -a; . ./.env; set +a
 curl -s --user "$FTP_USER:$FTP_PASS" \
-  -T scanner_web.db "ftp://$FTP_HOST/scanner/scanner_web.db"
+  -T scanner.db "ftp://$FTP_HOST/scanner/scanner.db"
 ```
 
 ---

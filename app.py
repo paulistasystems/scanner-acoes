@@ -3,13 +3,10 @@ import math
 from flask import Flask, request, jsonify, send_from_directory
 from dotenv import load_dotenv
 
-# Load env variables (FTP_HOST, etc.)
-load_dotenv()
-
-# We set a separate DB for the web version if not specified, 
-# to avoid conflicts with the Streamlit 3.13 version locally.
-if not os.environ.get("SCANNER_DB"):
-    os.environ["SCANNER_DB"] = "scanner_web.db"
+# Load env variables (FTP_HOST, SCANNER_CHART_URL, etc.). Path explicito: no Passenger
+# o CWD pode nao ser o app root, e load_dotenv() padrao busca a partir do CWD — sem
+# isto o .env (e SCANNER_CHART_URL) pode nao ser carregado no servidor.
+load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"))
 
 import data_layer
 import warming
@@ -205,6 +202,23 @@ def api_failures():
     df = data_layer.list_failures()
     if df.empty: return jsonify([])
     return jsonify(df.to_dict(orient='records'))
+
+@app.route('/api/egress_diag')
+def api_egress_diag():
+    """Diagnóstico: confirma se o processo ativo enxerga SCANNER_CHART_URL e
+    mede uma chamada do _fetch_chart_direct (egress PHP)."""
+    import time as _t
+    url = os.environ.get('SCANNER_CHART_URL', '')
+    t0 = _t.time()
+    df, err = data_layer._fetch_chart_direct('SLCE3.SA', '1d', '1y')
+    dt = round(_t.time() - t0, 3)
+    return jsonify({
+        'SCANNER_CHART_URL': url or None,
+        'fetch_rows': 0 if (df is None or df.empty) else len(df),
+        'fetch_err': err,
+        'elapsed_s': dt,
+    })
+
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5001))

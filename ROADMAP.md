@@ -476,6 +476,55 @@ CREATE TABLE delist_indicators (
 
 ---
 
+## 🔌 Egress PHP (Yahoo Chart API) — arquitetura adotada + investigação remota pendente
+
+### Contexto (2026-07-12)
+O `yfinance` falha no IP do servidor paulista.dev: o bootstrap cookie/crumb
+(`fc.yahoo.com` → `query2.../v1/test/getcrumb`) recebe **401 "Invalid Crumb"**, então
+`yf.download` devolve vazio para todos os tickers (`Expecting value: line 1 column 1`,
+"symbol may be delisted"). O endpoint público **Chart API v8** (`/v8/finance/chart`)
+**não exige crumb** e responde 200+dados só com User-Agent de browser — confirmado por
+probe PHP que cobriu os **214/214 símbolos** do universo (0 delistados de verdade; o
+`DELISTED_SYMBOLS.md` é não-confiável, gerado pelo yfinance quebrado).
+
+### Solução adotada (validada localmente)
+- **`php/yahoo_chart.php`** — proxy direto ao Chart API v8 (browser UA, sem crumb).
+  Egress único, usado em local e remoto. `php/yahoo_probe.php` + `php/symbols.json`
+  (gerado por `php/gen_symbols.py`) = diagnóstico de cobertura.
+- **`data_layer._fetch_chart_direct`** — quando `SCANNER_CHART_URL` está setada, busca
+  via esse proxy em vez de Yahoo direto. `run_web.sh` sobe `php -S` local (PHP 8.3) e
+  exporta a URL; o `.env` local aponta para ele.
+- **Local 100% funcional**: prewarm preencheu 1.214 barras via proxy, 0 falhas; leitura
+  determinística; boot do scanner OK nos 4 intervalos.
+
+### 🔴 Pendente — o warm **remoto** não progride (investigação futura)
+Em produção o warm worker **trava**: `done` para de subir (ex.: 31/642 congelado em
+`XBOV11.SA`), `stderr.log` sem crescer (nenhum erro novo de yfinance). A proxy em si
+funciona — self-probe `https://paulista.dev/yahoo_chart.php` = 200 em ~0.6s.
+
+**Hipótese forte:** o processo Passenger **não está lendo `SCANNER_CHART_URL`** porque
+`app.py` chamava `load_dotenv()` sem path — o python-dotenv busca a partir do CWD, que no
+Passenger pode não ser o app root → `.env` não carregado → `_fetch_chart_direct` cai no
+Yahoo direto + fallback `yfinance` (lento/trava).
+
+**Plano de investigação (executar via DirectAdmin):**
+1. Confirmar o fix do `load_dotenv` no `app.py` (path explícito via `__file__`) — **já no
+   working tree**.
+2. Deploy via FTP de `app.py` + `data_layer.py` (egress + fix 30m) — `data_layer.py` já
+   deployed; `app.py` com o fix + endpoint de diagnóstico precisa subir.
+3. **Restart pelo DirectAdmin** (NÃO via FTP `tmp/restart.txt` — preferência do usuário).
+4. Bater em `/api/egress_diag` (endpoint já adicionado): deve mostrar `SCANNER_CHART_URL`
+   setada e `fetch_rows>0` em <2s. Se vier `null`, o `.env` ainda não está sendo lido.
+5. Disparar `POST /api/warm` e confirmar `done/total` subindo rápido (~0.6s/item, ~6 min
+   no total) — sinal de que o egress PHP está ativo.
+
+### Por que o yfinance/Python falha no servidor (investigação separada, depois)
+Confirmar se `requests` direto ao Yahoo, a partir do processo Python no servidor, se
+comporta diferente do `curl` do PHP (mesmo IP, mesmo endpoint, mesmo UA). Se sim, isolar
+TLS/UA/throttle. Fora de escopo agora — o egress PHP resolve o sintoma.
+
+---
+
 ## Próximos Passos (Roadmap Futuro)
 
 ### Curto Prazo

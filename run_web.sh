@@ -31,5 +31,18 @@ if [ -n "$PIDS" ]; then
   echo "Porta liberada."
 fi
 
+# --- Egress PHP (Yahoo Chart API) — mesmo recurso em local e remoto ----------
+# O data_layer busca candles via SCANNER_CHART_URL (proxy PHP, php/yahoo_chart.php).
+# Sobe o serviço local na porta 8008 se ainda não estiver no ar.
+PHP_PORT="${PHP_PORT:-8008}"
+export SCANNER_CHART_URL="http://127.0.0.1:${PHP_PORT}/yahoo_chart.php"
+if ! lsof -tiTCP:"$PHP_PORT" -sTCP:LISTEN >/dev/null 2>&1; then
+  echo "Subindo egress PHP na porta $PHP_PORT..."
+  if command -v php >/dev/null 2>&1; then PHPBIN="php"
+  else PHPBIN="$(brew --prefix php@8.3 2>/dev/null)/bin/php"; fi
+  ( cd php && exec "$PHPBIN" -S 127.0.0.1:"$PHP_PORT" -t . ) &
+  echo "  PHP egress PID $!  ->  $SCANNER_CHART_URL"
+fi
+
 source venv39/bin/activate
 python app.py

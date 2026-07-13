@@ -1,25 +1,21 @@
 # -*- coding: utf-8 -*-
+"""
+warming.py — Worker de aquecimento (prewarm) em background.
+
+Estado em disco (tabela warm_state), nao em memoria: o Phusion Passenger roda varios
+processos, e cada um teria seu proprio _state em memoria — o que fazia o frontend
+desistir do aquecimento ao pollar um processo "frio" (running=False) enquanto outro
+aquecia. Com o estado no SQLite, todos os processos enxergam o mesmo running/done/total,
+o claim eh atomico (so um processo aquece por vez), e um heartbeat detecta worker morto
+(processo reciclado) para outro processo retomar.
+"""
 import threading
-import time
-from datetime import datetime
+from datetime import datetime, timedelta
+
 import data_layer
 
-_state_lock = threading.Lock()
-_state = {
-    "running": False,
-    "done": 0,
-    "total": 0,
-    "last_symbol": "",
-    "intervals": [],
-    "started_at": None,
-    "finished_at": None
-}
+_WARM_STALE = data_layer.WARM_STALE_SECONDS
 
-def _update_progress(done, total, symbol, ok):
-    with _state_lock:
-        _state["done"] = done
-        _state["total"] = total
-        _state["last_symbol"] = symbol
 
 def _warm_worker(symbols, intervals):
     try:
@@ -27,27 +23,29 @@ def _warm_worker(symbols, intervals):
     except Exception as e:
         print(f"Erro no background warm_worker: {e}")
     finally:
-        with _state_lock:
-            _state["running"] = False
-            _state["finished_at"] = datetime.now().isoformat()
+        data_layer.release_warm(datetime.now(data_layer.B3_TZ).isoformat())
+
+
+def _update_progress(done, total, symbol, ok):
+    # Callback do prewarm: atualiza progresso + heartbeat no banco a cada item.
+    data_layer.tick_warm(done, symbol)
+
 
 def start_warm(symbols, intervals):
-    with _state_lock:
-        if _state["running"]:
-            return False  # Already running
-        
-        _state["running"] = True
-        _state["done"] = 0
-        _state["total"] = len(symbols) * len(intervals)
-        _state["last_symbol"] = ""
-        _state["intervals"] = intervals
-        _state["started_at"] = datetime.now().isoformat()
-        _state["finished_at"] = None
+    """Inicia o aquecimento se nenhum outro processo estiver rodando (claim atomico).
+    Retorna True se este chamador iniciou, False se ja ha um warm ativo/recente."""
+    now = datetime.now(data_layer.B3_TZ)
+    started_at = now.isoformat()
+    cutoff = (now - timedelta(seconds=_WARM_STALE)).isoformat()
+    total = len(symbols) * len(intervals)
+
+    if not data_layer.claim_warm(total, started_at, cutoff):
+        return False  # outro processo ja esta aquecendo (ou acabou de adquirir)
 
     t = threading.Thread(target=_warm_worker, args=(symbols, intervals), daemon=True)
     t.start()
     return True
 
+
 def status():
-    with _state_lock:
-        return dict(_state)
+    return data_layer.get_warm_state()

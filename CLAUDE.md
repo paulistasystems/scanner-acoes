@@ -103,3 +103,10 @@ that throttled/truncated Yahoo responses used to cause.
 - User-facing text and code comments are in Portuguese (pt-BR).
 - When editing scanners, preserve `baixar_dados` / `baixar_dados_15m` signatures —
   they have ~22 call sites that must stay unchanged.
+- **Mudanças no app remoto (`paulista.dev/scanner`, Phusion Passenger) — deploy e
+  restart só pelo usuário.** Subir arquivos ao servidor via FTP (deploy de
+  `app.py`/`data_layer.py`/`.env`/PHP) e reiniciar o app são feitos pelo usuário
+  (deploy por FTP; restart pelo console do DirectAdmin). **Pergunte ao usuário antes**
+  de qualquer um dos dois — não suba arquivos ao servidor nem use `tmp/restart.txt`
+  por conta própria. Checagens só-leitura (`curl /api/status`, `/api/bars`, baixar
+  `stderr.log`, listar diretórios via FTP) seguem liberadas.

@@ -15,9 +15,6 @@ log
 scanner.db
 scanner.db-shm
 scanner.db-wal
-scanner_web.db
-scanner_web.db-shm
-scanner_web.db-wal
 
 # Artefatos de sessão do Claude Code
 EnterPlanMode*
@@ -30,3 +27,8 @@ tools/_*.json
 # Secrets do Supabase (gestão dinâmica de símbolos) — NUNCA commitar
 .env
 .streamlit/secrets.toml
+
+# PHP Cache/Snapshots (diagnostic dumps & lock)
+php/all_data.csv
+php/all_data.json
+php/.snapshot.lock

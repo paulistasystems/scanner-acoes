@@ -30,8 +30,10 @@ import time
 import sqlite3
 import threading
 from datetime import datetime, timedelta, timezone
+from urllib.parse import quote
 
 import pandas as pd
+import requests
 import yfinance as yf
 
 try:
@@ -114,6 +116,22 @@ def _ensure_schema():
                 last_attempt_at TEXT,
                 PRIMARY KEY (symbol, interval)
             );
+
+            -- Estado do warm em disco (nao em memoria): o Phusion Passenger roda varios
+            -- processos; assim todos enxergam o mesmo running/done/total e o frontend
+            -- pode esperar o aquecimento de forma confiavel. heartbeat_at permite
+            -- detectar um worker morto (processo reciclado) e retomar.
+            CREATE TABLE IF NOT EXISTS warm_state (
+                id            INTEGER PRIMARY KEY CHECK (id = 1),
+                running       INTEGER NOT NULL DEFAULT 0,
+                done          INTEGER NOT NULL DEFAULT 0,
+                total         INTEGER NOT NULL DEFAULT 0,
+                last_symbol   TEXT    NOT NULL DEFAULT '',
+                started_at    TEXT,
+                finished_at   TEXT,
+                heartbeat_at  TEXT
+            );
+            INSERT OR IGNORE INTO warm_state (id, running) VALUES (1, 0);
             """
         )
         conn.commit()
@@ -265,11 +283,133 @@ def invalidate():
 
 
 # ----------------------------- Yahoo (fill) -----------------------------
+# Chart API v8 — endpoint publico de candles. No servidor paulista.dev o bootstrap
+# cookie/crumb do yfinance recebe 401 ("Invalid Crumb"), mas este endpoint responde
+# 200+dados com um User-Agent de browser, sem precisar de cookie/crumb. Por isso eh o
+# caminho primario; o yf.download (que depende do crumb) fica como fallback.
+_CHART_ENDPOINT = "https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
+_CHART_UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+             "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+
+# Yahoo so aceita tokens de range fixos (1d,5d,1mo,3mo,6mo,1y,2y,5y,10y,ytd,max) —
+# "75d"/"45d" NAO sao aceitos. Mapeia o period pedido a um token valido e generoso;
+# o excedente eh fatiado na leitura por _PERIOD_DAYS (profundidade maxima por intervalo).
+_CHART_RANGE = {
+    "1y": "1y", "2y": "2y",
+    "75d": "6mo", "60d": "3mo", "45d": "3mo", "30d": "1mo", "15d": "5d", "5d": "5d",
+}
+# 30m/15m: Yahoo limita intradiário a <=60 dias; "3mo" (90d) => HTTP 422. "1mo" é seguro.
+_INTERVAL_DEFAULT_RANGE = {"1d": "1y", "1h": "6mo", "30m": "1mo", "15m": "5d"}
+
+
+def _fetch_chart_direct(symbol, interval, period):
+    """Baixa candles direto do Yahoo Chart API v8 (sem cookie/crumb).
+
+    Retorna (df, erro): df com colunas Open/High/Low/Close/Volume e convencao de tz
+    identica ao yfinance (diario = index tz-naive meia-noite; intradiario = index
+    tz-aware UTC), para manter `_is_filled`/leitura compativeis com os dados ja no banco.
+    OHL eh reescalado pelo ratio adjclose/close para paridade com `yf.download(auto_adjust=True)`."""
+    # period1/period2 (epocas) dao a janela exata em dias e respeitam o limite por
+    # intervalo (1d=365, 1h=75<=730, 30m=45<=60, 15m=5<=60). range-token so cai como
+    # fallback se o period nao for conhecido.
+    days = _PERIOD_DAYS.get(period)
+    if days:
+        now = int(time.time())
+        params = {"period1": now - days * 86400, "period2": now, "interval": interval}
+    else:
+        params = {"range": _INTERVAL_DEFAULT_RANGE.get(interval, "1mo"), "interval": interval}
+
+    # Egress: por padrao, Yahoo direto. Se SCANNER_CHART_URL apontar para o proxy
+    # PHP (php/yahoo_chart.php), a chamada passa por ele — mesmo recurso em local e
+    # remoto, contornando o crumb 401 do yfinance no IP do servidor. O proxy
+    # repassa symbol + (period1/period2|range) e devolve o corpo cru do Yahoo.
+    egress = os.environ.get("SCANNER_CHART_URL", "").strip()
+    if egress:
+        url = egress
+        params = dict(params, symbol=symbol)
+        timeout = 25  # proxy PHP -> Yahoo adiciona um salto
+    else:
+        url = _CHART_ENDPOINT.format(symbol=quote(symbol, safe=""))
+        timeout = 15
+    try:
+        resp = requests.get(
+            url, params=params, headers={"User-Agent": _CHART_UA}, timeout=timeout,
+        )
+    except Exception as e:
+        return pd.DataFrame(), f"chart request exc: {e!r}"
+    if resp.status_code != 200:
+        return pd.DataFrame(), f"chart http {resp.status_code}"
+    try:
+        payload = resp.json()
+    except Exception as e:
+        return pd.DataFrame(), f"chart json exc: {e!r}"
+
+    chart = payload.get("chart") or {}
+    results = chart.get("result")
+    if not results:
+        err = chart.get("error") or {}
+        return pd.DataFrame(), f"chart no result: {err.get('description', 'unknown')}"
+    r0 = results[0]
+    ts = r0.get("timestamp") or []
+    if not ts:
+        return pd.DataFrame(), "chart empty timestamp"
+
+    indicators = r0.get("indicators") or {}
+    quote_obj = (indicators.get("quote") or [{}])[0]
+    adjclose = ((indicators.get("adjclose") or [{}])[0]).get("adjclose")
+    n = len(ts)
+
+    # DatetimeIndex: diario tz-naive meia-noite (Yahoo entrega o epoch diario em 13:00 UTC
+    # = abertura B3; normalizamos para 00:00 como o yfinance), intradiario tz-aware UTC.
+    idx = pd.to_datetime(ts, unit="s", utc=True)
+    if interval == "1d":
+        idx = idx.normalize().tz_localize(None)
+
+    def col(name):
+        v = quote_obj.get(name)
+        return v if v is not None else [None] * n
+
+    df = pd.DataFrame(
+        {"Open": col("open"), "High": col("high"), "Low": col("low"),
+         "Close": col("close"), "Volume": col("volume")},
+        index=idx,
+    )
+    df.index.name = None
+
+    # auto_adjust: reescala OHL pelo ratio adjclose/close (paridade com yf.download).
+    close = df["Close"]
+    if adjclose is not None and len(adjclose) == n:
+        adj = pd.Series(adjclose, index=df.index)
+        ratio = adj.divide(close.replace(0, pd.NA))
+        ratio = ratio.where(ratio.notna() & (ratio > 0), 1.0)
+        for c in ("Open", "High", "Low"):
+            df[c] = df[c] * ratio
+        df["Close"] = adj
+
+    df = df.dropna(how="all")
+    if df.empty:
+        return pd.DataFrame(), "chart all-nan"
+    return df, None
+
+
 def _fetch_from_yahoo(symbol, interval, period, attempts=3):
-    """Baixa do yfinance com tratamento de MultiIndex e retry curto.
-    Retorna (df, erro): df vazio + mensagem se todas as tentativas falharem."""
+    """Baixa candles do Yahoo. Caminho primario = Chart API v8 (direto, ou via proxy
+    PHP quando SCANNER_CHART_URL esta setada). Fallback = yf.download — mas SO quando
+    o egress NAO e o proxy PHP: no servidor o crumb do yfinance recebe 401 e o
+    fallback so perde ~30-60s por simbolo, travando o warm. Com egress PHP ativo,
+    devolve vazio rapido (prewarm registra e segue) em vez de martelar yfinance.
+    Retorna (df, erro): df vazio + mensagem se todos os caminhos falharem."""
+    df, err = _fetch_chart_direct(symbol, interval, period)
+    if df is not None and not df.empty:
+        return df, None
+
+    # Egress PHP ativo => yfinance quebrado neste IP (crumb 401): pula o fallback
+    # lento e falha rapido. Localmente (sem SCANNER_CHART_URL) mantem o fallback.
+    if os.environ.get("SCANNER_CHART_URL", "").strip():
+        return pd.DataFrame(), f"{err or 'chart empty'} (egress php; yfinance skipped)"
+
+    last_err = err or "empty/truncated response"
     delays = [0.5, 1.5]
-    last_err = "empty/truncated response"
     for attempt in range(attempts):
         try:
             df = yf.download(symbol, interval=interval, period=period, progress=False, auto_adjust=True)
@@ -358,6 +498,78 @@ def get_bars(symbol, interval, period):
             cutoff = cutoff.replace(tzinfo=None)
         df = df[df.index >= cutoff]
     return df
+
+
+# ----------------------------- Warm state (compartilhado entre processos) -----------------------------
+# Janela para considerar um worker "vivo". Acima disso sem heartbeat, presumemos
+# que o processo Passenger foi reciclado e o warm pode ser retomado por outro processo.
+WARM_STALE_SECONDS = 90
+
+
+def get_warm_state():
+    """Snapshot do estado de aquecimento lido do banco (compartilhado entre processos
+    Passenger). Se running=1 mas o heartbeat esta estagnado, trata como parado (worker
+    morto) para que o frontend nao espere infinitamente e outro processo possa retomar."""
+    _ensure_schema()
+    with _lock:
+        row = _connect().execute(
+            "SELECT running, done, total, last_symbol, started_at, finished_at, heartbeat_at "
+            "FROM warm_state WHERE id=1"
+        ).fetchone()
+    if not row:
+        return {"running": False, "done": 0, "total": 0, "last_symbol": "",
+                "started_at": None, "finished_at": None, "intervals": []}
+    running, done, total, last_symbol, started_at, finished_at, heartbeat_at = row
+    stale = False
+    if running and heartbeat_at:
+        try:
+            hb = datetime.fromisoformat(heartbeat_at)
+            if (_now_brt() - hb).total_seconds() > WARM_STALE_SECONDS:
+                stale = True
+        except Exception:
+            stale = True
+    return {
+        "running": bool(running) and not stale,
+        "done": done, "total": total, "last_symbol": last_symbol,
+        "started_at": started_at, "finished_at": finished_at, "intervals": [],
+    }
+
+
+def claim_warm(total, started_at, heartbeat_cutoff):
+    """Tenta adquirir atomicamente o lock de aquecimento. Sucede (rowcount=1) apenas se
+    o estado esta livre (running=0) ou o worker anterior morreu (heartbeat estagnado).
+    Comparacao por string ISO funciona porque todos os ts usam o mesmo formato/tz."""
+    _ensure_schema()
+    with _lock:
+        cur = _connect().execute(
+            "UPDATE warm_state SET running=1, done=0, total=?, last_symbol='', "
+            "started_at=?, finished_at=NULL, heartbeat_at=? "
+            "WHERE id=1 AND (running=0 OR heartbeat_at IS NULL OR heartbeat_at < ?)",
+            (total, started_at, started_at, heartbeat_cutoff),
+        )
+        _connect().commit()
+        return cur.rowcount == 1
+
+
+def tick_warm(done, last_symbol):
+    """Atualiza progresso + heartbeat a cada item processado pelo worker."""
+    _ensure_schema()
+    with _lock:
+        conn = _connect()
+        conn.execute(
+            "UPDATE warm_state SET done=?, last_symbol=?, heartbeat_at=? WHERE id=1",
+            (done, last_symbol, _now_brt().isoformat()),
+        )
+        conn.commit()
+
+
+def release_warm(finished_at):
+    """Marca o aquecimento como concluido (worker saiu, com sucesso ou erro)."""
+    _ensure_schema()
+    with _lock:
+        conn = _connect()
+        conn.execute("UPDATE warm_state SET running=0, finished_at=? WHERE id=1", (finished_at,))
+        conn.commit()
 
 
 # ----------------------------- Aquisição (prewarm) + log de falhas -----------------------------

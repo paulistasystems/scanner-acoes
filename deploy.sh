@@ -14,19 +14,27 @@ echo "Deploy -> $FTP_USER@$FTP_HOST"
 #    deploys só-de-código não tocam no build.
 #    Pré-requisito: BUILD_DIR (/tmp/scanner_linux_sitepackages) deve existir.
 
-# 1. Stop local server if running
-echo ""
-echo "==> Parando servidor local (se rodando)..."
-pkill -f "python app.py" 2>/dev/null && echo "   Servidor parado." || echo "   Nenhum servidor local rodando."
-
-# 2. Sync DB: download remoto -> local (preserva dados aquecidos)
+# 1+2. Sync DB: download remoto -> local (preserva dados aquecidos).
+#      Só derruba o app local SE o sync trouxer dados de fato — baixar nada
+#      não justifica parar o servidor local.
 echo ""
 echo "==> Sincronizando banco de dados..."
+DB_TMP="scanner.db.tmp"
 if curl -fs --user "$FTP_USER:$FTP_PASS" \
-    "ftp://$FTP_HOST/scanner/scanner_web.db" -o scanner_web.db; then
-  echo "   scanner_web.db baixado: $(ls -lh scanner_web.db | awk '{print $5}')"
+    "ftp://$FTP_HOST/scanner/scanner.db" -o "$DB_TMP"; then
+  if [ -s "$DB_TMP" ]; then
+    echo "   Banco remoto baixado: $(ls -lh "$DB_TMP" | awk '{print $5}')"
+    echo "==> Parando servidor local (para troca do banco)..."
+    pkill -f "python app.py" 2>/dev/null && echo "   Servidor parado." || echo "   Nenhum servidor local rodando."
+    mv -f "$DB_TMP" scanner.db
+    echo "   scanner.db atualizado."
+  else
+    rm -f "$DB_TMP"
+    echo "   Banco remoto vazio — nada a sincronizar. Servidor local intocado."
+  fi
 else
-  echo "   Banco remoto ausente ou inacessivel — continuando sem sync."
+  rm -f "$DB_TMP" 2>/dev/null || true
+  echo "   Banco remoto ausente ou inacessivel — continuando sem sync. Servidor local intocado."
 fi
 
 # 3. Stage

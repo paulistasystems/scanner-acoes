@@ -10,7 +10,7 @@ a fonte de verdade Streamlit/3.13 — este branch **nunca deve ser mergeado ao m
 - **Frontend:** HTML/JS/CSS vanilla puro — sem build, sem framework
 - **Python:** 3.9 (compatível com o servidor remoto 3.9.19)
 - **Indicadores:** Reimplementados em pandas puro (`indicators.py`) — sem `pandas_ta`/`numba`
-- **Dados:** `yfinance` → SQLite (`scanner_web.db`) via `data_layer.py`
+- **Dados:** `yfinance` → SQLite (`scanner.db`) via `data_layer.py`
 - **Símbolos:** Fallback local e estático via `symbols_fallback.py` / `symbol_store.py` (Supabase removido)
 
 ## Desenvolvimento local
@@ -38,7 +38,7 @@ via Yahoo Finance). O progresso aparece na barra de status do frontend.
 |---|---|---|
 | `SUPABASE_URL` | URL do projeto Supabase | — |
 | `SUPABASE_ANON_KEY` | Chave anon do Supabase | — |
-| `SCANNER_DB` | Caminho do SQLite | `scanner_web.db` (junto ao script) |
+| `SCANNER_DB` | Caminho do SQLite | `scanner.db` (junto ao script) |
 | `PORT` | Porta do servidor local | `5001` |
 
 ## Deploy no DirectAdmin / Phusion Passenger
@@ -78,7 +78,7 @@ Configure via painel DirectAdmin **ou** crie `.env` na raiz da aplicação:
 ```
 SUPABASE_URL=https://xxxx.supabase.co
 SUPABASE_ANON_KEY=eyJ...
-SCANNER_DB=/home/paulista/scanner_web.db
+SCANNER_DB=/home/paulista/scanner.db
 ```
 
 ### 5. Reiniciar e verificar
