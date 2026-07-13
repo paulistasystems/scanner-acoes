@@ -158,3 +158,4 @@ that throttled/truncated Yahoo responses used to cause.
   de qualquer um dos dois — não suba arquivos ao servidor nem use `tmp/restart.txt`
   por conta própria. Checagens só-leitura (`curl /api/status`, `/api/bars`, baixar
   `stderr.log`, listar diretórios via FTP) seguem liberadas.
+- **Desenvolvimento e Branches:** Trabalhe e commite diretamente na branch `master` (branch padrão) deste repositório sem a necessidade de criar branches temporárias/intermediárias, a menos que o usuário instrua explicitamente o contrário.
