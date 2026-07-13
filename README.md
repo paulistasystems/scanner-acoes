@@ -29,9 +29,10 @@ cp .env.example .env   # preencher SUPABASE_URL e SUPABASE_ANON_KEY
 venv39/bin/python app.py   # sobe em http://localhost:5001
 ```
 
-O primeiro acesso dispara o warming em background (`warming.py`). Em **dev** (processo
-Flask persistente) ele completa e o progresso aparece na barra de status. Em **produção**
-o warming é por **cron** — a thread do `warming.py` morre no Passenger (ver seção Deploy).
+Em **dev**, além do cron horário, o app pré-aquece ao iniciar (`__main__` do `app.py` →
+`warming.start_warm`); o primeiro acesso via browser também dispara o warming. Em
+**produção** o warming é só por **cron** — a thread do `warming.py` morre no Passenger
+(ver seção Deploy).
 
 ## Variáveis de ambiente
 

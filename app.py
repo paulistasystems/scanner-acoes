@@ -221,5 +221,15 @@ def api_egress_diag():
 
 
 if __name__ == '__main__':
+    # Dev apenas: o Passenger importa `app` sem rodar o __main__, então isto só roda
+    # localmente (python app.py / run_web.sh). Aquece o scanner.db no boot — além do
+    # cron horário — para a UI já ter dados sem depender de um browser abrir a página.
+    # Best-effort: se já houver um warm em execução (ex.: cron), start_warm retorna
+    # False e segue. Depende do proxy PHP (subido pelo run_web.sh) para o egress.
+    try:
+        started = warming.start_warm(ATIVOS_B3_AMPLIADO, ['1d', '1h', '30m', '15m'])
+        print(f"startup prewarm: {'iniciado' if started else 'já há um warm em execução'}")
+    except Exception as e:
+        print(f"startup prewarm falhou (não fatal): {e!r}")
     port = int(os.environ.get('PORT', 5001))
     app.run(debug=True, use_reloader=False, port=port)
