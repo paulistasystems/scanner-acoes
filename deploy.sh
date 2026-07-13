@@ -8,10 +8,11 @@ cd "$SCRIPT_DIR"
 set -a; . ./.env; set +a
 echo "Deploy -> $FTP_USER@$FTP_HOST"
 
-# 0. Build Linux site-packages (if needed)
-echo ""
-echo "==> Building Linux site-packages..."
-./build.sh
+# 0. (Build desacoplado) site-packages é construído por ./build.sh separadamente.
+#    Rode `./build.sh` manualmente quando requirements-py39.txt mudar. O deploy
+#    só re-sobe site-packages se o BUILD_DIR tiver sido reconstruído (passo 4);
+#    deploys só-de-código não tocam no build.
+#    Pré-requisito: BUILD_DIR (/tmp/scanner_linux_sitepackages) deve existir.
 
 # 1. Stop local server if running
 echo ""
