@@ -59,7 +59,7 @@ if [ "$FORCE_DEPLOY" = true ] || [ "$CURRENT_REQ_HASH" != "$PREVIOUS_REQ_HASH" ]
   echo "   Requirements mudaram ou não foram compilados localmente. Instalando pacotes (pip)..."
   rm -rf "$BUILD_DIR"
   mkdir -p "$BUILD_DIR"
-  python3 -m pip install -r requirements-py39.txt --target "$BUILD_DIR"
+  venv39/bin/python -m pip install -r requirements-py39.txt --target "$BUILD_DIR"
 
   echo "   Subindo novos site-packages para o servidor..."
   lftp -u "$FTP_USER","$FTP_PASS" "ftp://$FTP_HOST" <<EOF
