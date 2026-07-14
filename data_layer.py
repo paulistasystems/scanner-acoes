@@ -810,21 +810,44 @@ def prewarm(symbols, intervals, attempts=3, progress=None):
     failures = []
     items = [(s, i) for s in symbols for i in intervals]
     total = len(items)
-    for idx, (symbol, interval) in enumerate(items):
-        ok = True
-        if not _is_filled(symbol, interval, now):
-            # use_cache=False: prewarm é aquisição — precisa de dados frescos (e
-            # atualiza o chart_cache via proxy PHP como efeito colateral do fetch).
-            df, err = _fetch_from_yahoo(symbol, interval, MAX_PERIOD.get(interval, "1y"),
-                                        attempts, use_cache=False)
-            if df is not None and not df.empty:
-                _upsert_bars(symbol, interval, df)
-                _set_fill_state(symbol, interval)
-                _clear_failure(symbol, interval)
-            else:
-                _record_failure(symbol, interval, attempts, err)
+
+    def process_item(symbol, interval):
+        if _is_filled(symbol, interval, now):
+            return symbol, interval, True, None
+
+        # use_cache=False: prewarm é aquisição — precisa de dados frescos (e
+        # atualiza o chart_cache via proxy PHP como efeito colateral do fetch).
+        df, err = _fetch_from_yahoo(symbol, interval, MAX_PERIOD.get(interval, "1y"),
+                                    attempts, use_cache=False)
+        if df is not None and not df.empty:
+            _upsert_bars(symbol, interval, df)
+            _set_fill_state(symbol, interval)
+            _clear_failure(symbol, interval)
+            return symbol, interval, True, None
+        else:
+            _record_failure(symbol, interval, attempts, err)
+            return symbol, interval, False, err
+
+    import concurrent.futures
+    done = 0
+    # Processamos com 5 workers paralelos para que ativos problemáticos
+    # (timeouts) não congelem todo o aquecimento.
+    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+        futures = {executor.submit(process_item, s, i): (s, i) for s, i in items}
+        for future in concurrent.futures.as_completed(futures):
+            s, i = futures[future]
+            try:
+                symbol, interval, ok, err = future.result()
+            except Exception as e:
+                # Catch-all se process_item quebrar por erro imprevisto
+                _record_failure(s, i, attempts, repr(e))
+                symbol, interval, ok, err = s, i, False, repr(e)
+
+            if not ok:
                 failures.append((symbol, interval))
-                ok = False
-        if progress is not None:
-            progress(idx + 1, total, symbol, ok)
+
+            done += 1
+            if progress is not None:
+                progress(done, total, symbol, ok)
+
     return failures
