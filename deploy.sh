@@ -1,5 +1,5 @@
 #!/bin/bash
-# deploy.sh — sobe APENAS a aplicação (código + site-packages se build mudou).
+# deploy.sh — sobe aplicação e constrói dependências (site-packages) se necessário.
 #
 # NUNCA sincroniza scanner.db (nem upload nem download).
 # O banco de produção fica no servidor; warm/DB é outro fluxo (cron / POST /api/warm).
@@ -12,12 +12,6 @@ cd "$SCRIPT_DIR"
 set -a; . ./.env; set +a
 echo "Deploy -> $FTP_USER@$FTP_HOST"
 echo "   Política: só aplicação. scanner.db NÃO é enviado nem baixado."
-
-# 0. (Build desacoplado) site-packages é construído por ./build.sh separadamente.
-#    Rode `./build.sh` manualmente quando requirements-py39.txt mudar. O deploy
-#    só re-sobe site-packages se o BUILD_DIR tiver sido reconstruído;
-#    deploys só-de-código não tocam no build.
-#    Pré-requisito: BUILD_DIR (/tmp/scanner_linux_sitepackages) deve existir.
 
 # 1. Stage — lista explícita de ficheiros da app (sem DB, sem venv, sem dumps)
 echo ""
@@ -43,46 +37,42 @@ echo "   Stage: $STAGE"
 echo "   Files: $(find "$STAGE" -type f | wc -l | tr -d ' ')"
 echo "   (sem scanner.db / sem sync de banco)"
 
-# 2. Upload site-packages to server virtualenv (only if build changed)
-echo ""
-echo "==> Subindo site-packages para virtualenv..."
-BUILD_DIR="/tmp/scanner_linux_sitepackages"
-BUILD_MARKER="/tmp/scanner_build_marker"
 FORCE_DEPLOY=false
-
 if [[ "${1:-}" == "--force" ]]; then
   FORCE_DEPLOY=true
-  echo "   Modo force ativado — sobrescrevendo site-packages/app files (ainda sem DB)."
+  echo "   Modo force ativado — forçando upload de site-packages e app."
 fi
 
-if [ -d "$BUILD_DIR" ]; then
-  CURRENT_HASH=$(find "$BUILD_DIR" -type f -exec sha1sum {} \; | sort | sha1sum | cut -d' ' -f1)
-  PREVIOUS_HASH=""
-  if [ -f "$BUILD_MARKER" ]; then
-    PREVIOUS_HASH=$(cat "$BUILD_MARKER")
-  fi
+# 2. Build and Upload site-packages to server virtualenv (só se requirements mudarem)
+echo ""
+echo "==> Verificando dependências (site-packages)..."
+BUILD_DIR="/tmp/scanner_linux_sitepackages"
+REQ_MARKER="/tmp/scanner_req_marker"
+CURRENT_REQ_HASH=$(sha1sum requirements-py39.txt | cut -d' ' -f1)
+PREVIOUS_REQ_HASH=""
 
-  if [ "$FORCE_DEPLOY" = true ] || [ "$CURRENT_HASH" != "$PREVIOUS_HASH" ]; then
-    if [ "$FORCE_DEPLOY" = true ]; then
-      echo "   Forçando upload de site-packages..."
-    else
-      echo "   Build mudou, subindo site-packages..."
-    fi
-    lftp -u "$FTP_USER","$FTP_PASS" "ftp://$FTP_HOST" <<EOF
+if [ -f "$REQ_MARKER" ]; then
+  PREVIOUS_REQ_HASH=$(cat "$REQ_MARKER")
+fi
+
+if [ "$FORCE_DEPLOY" = true ] || [ "$CURRENT_REQ_HASH" != "$PREVIOUS_REQ_HASH" ] || [ ! -d "$BUILD_DIR" ]; then
+  echo "   Requirements mudaram ou não foram compilados localmente. Instalando pacotes (pip)..."
+  rm -rf "$BUILD_DIR"
+  mkdir -p "$BUILD_DIR"
+  python3 -m pip install -r requirements-py39.txt --target "$BUILD_DIR"
+
+  echo "   Subindo novos site-packages para o servidor..."
+  lftp -u "$FTP_USER","$FTP_PASS" "ftp://$FTP_HOST" <<EOF
 set ftp:passive-mode on
 set net:timeout 120
 set net:max-retries 3
 mirror --reverse --ignore-time --parallel=4 $BUILD_DIR /virtualenv/scanner/3.9/lib/python3.9/site-packages
 bye
 EOF
-    echo "$CURRENT_HASH" > "$BUILD_MARKER"
-    echo "   Site-packages atualizado."
-  else
-    echo "   Build não mudou, pulando site-packages."
-  fi
+  echo "$CURRENT_REQ_HASH" > "$REQ_MARKER"
+  echo "   Site-packages atualizados localmente e no servidor."
 else
-  echo "   ERRO: build directory not found. Run ./build.sh first."
-  exit 1
+  echo "   Requirements não mudaram. Pulando upload de site-packages."
 fi
 
 # 3. Upload app files only (never database)
