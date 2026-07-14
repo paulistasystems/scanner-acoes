@@ -101,22 +101,25 @@ def clean_nan(obj):
 @app.route('/api/scan')
 def api_scan():
     scanner_id = request.args.get('scanner')
+    exclude_failures = request.args.get('exclude_failures', 'false').lower() == 'true'
+
     if scanner_id not in SCANNERS_REGISTRY:
         return jsonify({"error": "Scanner not found"}), 400
-        
+
     s = SCANNERS_REGISTRY[scanner_id]
-    
+
     # Check if warm is running
     w_status = warming.status()
     if w_status["running"]:
         return jsonify({
             "warming": True,
             "warm_progress": w_status,
-            "data_ready": data_layer.data_ready(),
+            "data_ready": data_layer.data_ready(exclude_failures=exclude_failures),
         })
 
     # Gate: não analisa se o universo × intervalos não está completo
-    ready = data_layer.data_ready()
+    # O data_ready agora já exclui dinamicamente via blacklist caso chegue em > 80%
+    ready = data_layer.data_ready(exclude_failures=exclude_failures)
     if not ready.get("ready"):
         return jsonify({
             "not_ready": True,
@@ -126,8 +129,22 @@ def api_scan():
         }), 503
 
     # Prepare args
+    from symbols_fallback import ATIVOS_B3_AMPLIADO
     ativos = ATIVOS_B3_AMPLIADO
-    
+
+    # Remove os globalmente delistados (blacklist)
+    blacklist = data_layer.get_blacklist()
+    if blacklist:
+        ativos = [sym for sym in ativos if sym not in blacklist]
+
+    # Se o modo restrito foi acionado, remove os que tiverem qualquer falha pontual
+    if exclude_failures and ready.get("ready"):
+        df_fill = data_layer.read_fill_state()
+        if not df_fill.empty:
+            filled_set = set(zip(df_fill['symbol'], df_fill['interval']))
+            intervals = ["1d", "1h", "30m", "15m"]
+            ativos = [sym for sym in ativos if all((sym, iv) in filled_set for iv in intervals)]
+
     try:
         if s["uses_profile"]:
             adx_min = float(request.args.get('adx_min', 20))
@@ -167,8 +184,9 @@ def api_scan():
 
 @app.route('/api/status')
 def api_status():
+    exclude_failures = request.args.get('exclude_failures', 'false').lower() == 'true'
     w_status = warming.status()
-    ready = data_layer.data_ready()
+    ready = data_layer.data_ready(exclude_failures=exclude_failures)
     return jsonify({
         "summary": data_layer.db_summary(),
         "warming": w_status["running"],
@@ -219,6 +237,13 @@ def api_fill_state():
     df = data_layer.read_fill_state()
     if df.empty: return jsonify([])
     return jsonify(df.to_dict(orient='records'))
+
+@app.route('/api/clear_blacklist', methods=['POST'])
+def api_clear_blacklist():
+    data_layer.clear_blacklist()
+    # Ao limpar a blacklist, vamos forçar um refresh dos dados para que o warmup traga de volta
+    # os simbolos agora aceitos, se houver necessidade
+    return jsonify({"success": True})
 
 @app.route('/api/failures')
 def api_failures():

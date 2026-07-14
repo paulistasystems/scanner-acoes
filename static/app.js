@@ -197,6 +197,10 @@ async function runSingle(scanner) {
     body.innerHTML = '';
 
     let url = `${BASE}/api/scan?scanner=${encodeURIComponent(scanner.id)}`;
+
+    const excludeFailures = document.getElementById('cb-exclude-failures')?.checked || false;
+    url += `&exclude_failures=${excludeFailures}`;
+
     if (scanner.uses_profile) {
         const adx = document.getElementById('adx_min').value;
         const rsi_min = document.getElementById('rsi_min').value;
@@ -296,6 +300,31 @@ function setupEventListeners() {
     document.getElementById('btn-warm').addEventListener('click', () => triggerWarm());
 
     document.getElementById('btn-run-all').addEventListener('click', startup);
+
+    const btnClearBlacklist = document.getElementById('btn-clear-blacklist');
+    if (btnClearBlacklist) {
+        btnClearBlacklist.addEventListener('click', async () => {
+            if (!confirm('Deseja reincluir todos os ativos ocultados (delistados devido a falhas)?\n\nIsso limpará a blacklist e forçará uma tentativa de download na próxima atualização.')) return;
+
+            try {
+                btnClearBlacklist.disabled = true;
+                btnClearBlacklist.textContent = '⏳ Limpando...';
+
+                await fetch(`${BASE}/api/clear_blacklist`, { method: 'POST' });
+
+                // Dispara refresh e warming imediatamente para recarregar tudo com o novo universo
+                await refreshDB();
+                await triggerWarm();
+
+            } catch (e) {
+                console.error("Erro ao limpar blacklist", e);
+                alert("Erro ao reincluir ativos. Tente novamente.");
+            } finally {
+                btnClearBlacklist.disabled = false;
+                btnClearBlacklist.textContent = '♻️ Reincluir Ativos Ocultos';
+            }
+        });
+    }
 }
 
 function setRunAllButton(enabled) {
@@ -324,7 +353,8 @@ function applyProfile(profileName) {
 
 async function updateStatus() {
     try {
-        const res = await fetch(`${BASE}/api/status`);
+        const excludeFailures = document.getElementById('cb-exclude-failures')?.checked || false;
+        const res = await fetch(`${BASE}/api/status?exclude_failures=${excludeFailures}`);
         const data = await res.json();
         updateStatusFrom(data);
     } catch (e) {

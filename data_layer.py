@@ -117,6 +117,11 @@ def _ensure_schema():
                 PRIMARY KEY (symbol, interval)
             );
 
+            CREATE TABLE IF NOT EXISTS blacklist (
+                symbol TEXT PRIMARY KEY,
+                added_at TEXT
+            );
+
             -- Estado do warm em disco (nao em memoria): o Phusion Passenger roda varios
             -- processos; assim todos enxergam o mesmo running/done/total e o frontend
             -- pode esperar o aquecimento de forma confiavel. heartbeat_at permite
@@ -144,6 +149,11 @@ def _ensure_schema():
                 fetched_at TEXT NOT NULL,
                 payload    TEXT NOT NULL,   -- JSON cru do /v8/finance/chart
                 PRIMARY KEY (symbol, interval)
+            );
+
+            CREATE TABLE IF NOT EXISTS blacklist (
+                symbol TEXT PRIMARY KEY,
+                added_at TEXT
             );
             """
         )
@@ -673,11 +683,61 @@ def db_summary():
 
 
 
+def get_blacklist():
+    _ensure_schema()
+    with _lock:
+        rows = _connect().execute("SELECT symbol FROM blacklist").fetchall()
+    return [r[0] for r in rows]
+
+
+def add_to_blacklist(symbols):
+    _ensure_schema()
+    if not symbols: return
+    now_str = _now_brt().isoformat()
+    with _lock:
+        conn = _connect()
+        conn.executemany("INSERT OR IGNORE INTO blacklist (symbol, added_at) VALUES (?, ?)", [(s, now_str) for s in symbols])
+        conn.commit()
+
+
+def clear_blacklist():
+    _ensure_schema()
+    with _lock:
+        conn = _connect()
+        conn.execute("DELETE FROM blacklist")
+        conn.commit()
+
+
+def blacklist_missing(symbols=None, intervals=None):
+    from symbols_fallback import ATIVOS_B3_AMPLIADO
+    base_symbols = list(symbols if symbols is not None else ATIVOS_B3_AMPLIADO)
+    intervals = list(intervals if intervals is not None else REQUIRED_INTERVALS)
+
+    blacklist = get_blacklist()
+    base_symbols = [s for s in base_symbols if s not in blacklist]
+
+    _ensure_schema()
+    with _lock:
+        conn = _connect()
+        filled = conn.execute("SELECT symbol, interval FROM fill_state").fetchall()
+
+    filled_set = {(r[0], r[1]) for r in filled}
+    missing_symbols = set()
+    for s in base_symbols:
+        if not all((s, iv) in filled_set for iv in intervals):
+            missing_symbols.add(s)
+
+    if missing_symbols:
+        add_to_blacklist(list(missing_symbols))
+
+    return list(missing_symbols)
+
+
 # Intervalos exigidos pelos scanners web (inclui Abertura 15m).
 REQUIRED_INTERVALS = ("1d", "1h", "30m", "15m")
 
 
-def data_ready(symbols=None, intervals=None, sample_missing=8):
+def data_ready(symbols=None, intervals=None, sample_missing=8, exclude_failures=False):
     """Pronto para rodar scanners? Todos os (symbol, interval) exigidos em fill_state.
 
     Idempotente com prewarm: só conta o que já está marcado como filled.
@@ -688,10 +748,11 @@ def data_ready(symbols=None, intervals=None, sample_missing=8):
     """
     from symbols_fallback import ATIVOS_B3_AMPLIADO
 
-    symbols = list(symbols if symbols is not None else ATIVOS_B3_AMPLIADO)
+    # Quando nenhum símbolo é passado, usa ATIVOS_B3_AMPLIADO, MAS FILTRA APENAS
+    # para os símbolos que já constam na tabela `fill_state` caso a tabela não
+    # esteja 100% vazia (modo dinâmico de exclusão de ativos defeituosos/persistentes).
+    base_symbols = list(symbols if symbols is not None else ATIVOS_B3_AMPLIADO)
     intervals = list(intervals if intervals is not None else REQUIRED_INTERVALS)
-    n_sym = len(symbols)
-    expected_total = n_sym * len(intervals)
 
     _ensure_schema()
     with _lock:
@@ -704,6 +765,41 @@ def data_ready(symbols=None, intervals=None, sample_missing=8):
         ).fetchall()
 
     filled_set = {(r[0], r[1]) for r in filled}
+
+    # Derivar "símbolos sadios" -> a intersecção entre o catalogo e os preenchidos,
+    # verificando a blacklist global também no processo.
+    blacklist = get_blacklist()
+    base_symbols = [s for s in base_symbols if s not in blacklist]
+    n_sym = len(base_symbols)
+
+    if n_sym == 0:
+         return {
+             "ready": True,
+             "symbols": 0,
+             "intervals": intervals,
+             "expected_pairs": 0,
+             "filled_pairs": 0,
+             "missing_pairs": 0,
+             "coverage_pct": 100.0,
+             "by_interval": [],
+             "missing_sample": [],
+             "message": "Nenhum ativo verificado (blacklist vazia?)"
+         }
+
+    # Se já batemos 80% do universe livre, ignorar e incluir as falhas dinâmicas via blacklist_missing
+    expected_total = n_sym * len(intervals)
+    have_total = len([1 for s in base_symbols for iv in intervals if (s, iv) in filled_set])
+    coverage_pct = round(100.0 * have_total / expected_total, 1) if expected_total else 0.0
+
+    if coverage_pct > 80.0:
+       missing_here = blacklist_missing(base_symbols, intervals)
+       # Remove eles da base
+       base_symbols = [s for s in base_symbols if s not in missing_here]
+       n_sym = len(base_symbols)
+
+    symbols = base_symbols
+    expected_total = n_sym * len(intervals)
+
     fail_map = {(r[0], r[1]): {"fail_count": r[2], "last_error": r[3]} for r in fail_rows}
 
     by_interval = []

@@ -56,10 +56,15 @@ if [ -f "$REQ_MARKER" ]; then
 fi
 
 if [ "$FORCE_DEPLOY" = true ] || [ "$CURRENT_REQ_HASH" != "$PREVIOUS_REQ_HASH" ] || [ ! -d "$BUILD_DIR" ]; then
-  echo "   Requirements mudaram ou não foram compilados localmente. Instalando pacotes (pip)..."
+  echo "   Requirements mudaram ou não foram compilados localmente. Instalando pacotes no Docker..."
   rm -rf "$BUILD_DIR"
   mkdir -p "$BUILD_DIR"
-  venv39/bin/python -m pip install -r requirements-py39.txt --target "$BUILD_DIR"
+  mkdir -p tmp_build_output
+
+  docker compose run --rm passenger sh -c 'mkdir -p /tmp/scanner_linux_sitepackages && pip install -r requirements-py39.txt --target /tmp/scanner_linux_sitepackages && cp -r /tmp/scanner_linux_sitepackages/* /app/tmp_build_output/'
+
+  mv tmp_build_output/* "$BUILD_DIR/"
+  rm -rf tmp_build_output
 
   echo "   Subindo novos site-packages para o servidor..."
   lftp -u "$FTP_USER","$FTP_PASS" "ftp://$FTP_HOST" <<EOF
