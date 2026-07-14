@@ -1145,8 +1145,6 @@ def coletar_candidatos(ativos, min_ratio, max_ratio):
         except Exception:
             continue
 
-    progresso_texto.empty()
-    barra_progresso.empty()
     return pd.DataFrame(resultados)
 
 def classificar_perfil(df, perfis):
@@ -1276,6 +1274,4 @@ def coletar_confluencia_15m_30m(ativos, rvol_min):
         except Exception:
             continue
 
-    progresso_texto.empty()
-    barra_progresso.empty()
     return pd.DataFrame(resultados)
