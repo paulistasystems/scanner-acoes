@@ -19,6 +19,9 @@ scanner.db-wal
 # Runtime: logs do warm_cron, restart.txt do Passenger, etc.
 tmp/
 
+# Logs baixados do servidor (./remote_logs.sh) — nunca commitar / nunca deployar
+remote_logs/
+
 # Artefatos de sessão do Claude Code
 EnterPlanMode*
 tools/_*.json
@@ -35,3 +38,14 @@ tools/_*.json
 php/all_data.csv
 php/all_data.json
 php/.snapshot.lock
+
+# Docker local (volume nomeado é o default; pasta se alguém montar bind)
+docker-data/
+
+# DB exportado do volume Docker (warm local → upload opcional)
+scanner.docker.db
+scanner.docker.db-*
+
+# Passenger Standalone (container bind-mount)
+passenger.*.pid
+passenger.*.log

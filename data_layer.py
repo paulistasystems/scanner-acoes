@@ -672,6 +672,84 @@ def db_summary():
     return out
 
 
+
+# Intervalos exigidos pelos scanners web (inclui Abertura 15m).
+REQUIRED_INTERVALS = ("1d", "1h", "30m", "15m")
+
+
+def data_ready(symbols=None, intervals=None, sample_missing=8):
+    """Pronto para rodar scanners? Todos os (symbol, interval) exigidos em fill_state.
+
+    Idempotente com prewarm: só conta o que já está marcado como filled.
+    Falhas em fetch_failures contam como "missing" (não liberam o gate) — o warm
+    pode retentar; símbolos delistados permanecem bloqueando até sair do universo.
+
+    Retorna dict serializável em JSON (usado por /api/status e /api/scan).
+    """
+    from symbols_fallback import ATIVOS_B3_AMPLIADO
+
+    symbols = list(symbols if symbols is not None else ATIVOS_B3_AMPLIADO)
+    intervals = list(intervals if intervals is not None else REQUIRED_INTERVALS)
+    n_sym = len(symbols)
+    expected_total = n_sym * len(intervals)
+
+    _ensure_schema()
+    with _lock:
+        conn = _connect()
+        filled = conn.execute(
+            "SELECT symbol, interval FROM fill_state"
+        ).fetchall()
+        fail_rows = conn.execute(
+            "SELECT symbol, interval, fail_count, last_error FROM fetch_failures"
+        ).fetchall()
+
+    filled_set = {(r[0], r[1]) for r in filled}
+    fail_map = {(r[0], r[1]): {"fail_count": r[2], "last_error": r[3]} for r in fail_rows}
+
+    by_interval = []
+    missing_total = 0
+    samples = []
+    for iv in intervals:
+        have = sum(1 for s in symbols if (s, iv) in filled_set)
+        miss_syms = [s for s in symbols if (s, iv) not in filled_set]
+        missing_total += len(miss_syms)
+        by_interval.append({
+            "interval": iv,
+            "have": have,
+            "expected": n_sym,
+            "missing": len(miss_syms),
+            "complete": len(miss_syms) == 0,
+        })
+        for s in miss_syms[: max(0, sample_missing // max(1, len(intervals)))]:
+            info = fail_map.get((s, iv)) or {}
+            samples.append({
+                "symbol": s,
+                "interval": iv,
+                "fail_count": info.get("fail_count"),
+                "last_error": (info.get("last_error") or "")[:200] or None,
+            })
+
+    ready = missing_total == 0 and n_sym > 0
+    have_total = expected_total - missing_total
+    return {
+        "ready": ready,
+        "symbols": n_sym,
+        "intervals": intervals,
+        "expected_pairs": expected_total,
+        "filled_pairs": have_total,
+        "missing_pairs": missing_total,
+        "coverage_pct": round(100.0 * have_total / expected_total, 1) if expected_total else 0.0,
+        "by_interval": by_interval,
+        "missing_sample": samples[:sample_missing],
+        "message": (
+            "Dados completos — scanners liberados."
+            if ready else
+            f"Faltam {missing_total}/{expected_total} pares (symbol, interval). "
+            "Scanners bloqueados até o warm completar."
+        ),
+    }
+
+
 def read_bars(symbol=None, interval=None, start=None, end=None, limit=None):
     """Leitura SOMENTE LEITURA da tabela `bars` para o painel de inspeção.
 

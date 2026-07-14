@@ -11,6 +11,7 @@ load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"))
 import data_layer
 import warming
 import scanners_core
+import warm_cron_status
 from symbols_fallback import ATIVOS_B3_AMPLIADO
 
 app = Flask(__name__, static_folder='static')
@@ -110,8 +111,19 @@ def api_scan():
     if w_status["running"]:
         return jsonify({
             "warming": True,
-            "warm_progress": w_status
+            "warm_progress": w_status,
+            "data_ready": data_layer.data_ready(),
         })
+
+    # Gate: não analisa se o universo × intervalos não está completo
+    ready = data_layer.data_ready()
+    if not ready.get("ready"):
+        return jsonify({
+            "not_ready": True,
+            "warming": False,
+            "data_ready": ready,
+            "error": ready.get("message") or "Dados incompletos — rode o warm.",
+        }), 503
 
     # Prepare args
     ativos = ATIVOS_B3_AMPLIADO
@@ -156,16 +168,27 @@ def api_scan():
 @app.route('/api/status')
 def api_status():
     w_status = warming.status()
+    ready = data_layer.data_ready()
     return jsonify({
         "summary": data_layer.db_summary(),
         "warming": w_status["running"],
-        "warm_progress": w_status
+        "warm_progress": w_status,
+        "data_ready": ready,
     })
+
+@app.route('/api/warm_cron_status')
+def api_warm_cron_status():
+    """Heartbeat do warm_cron.py + timestamps fill_state no SQLite.
+    Mesmo payload conceitual do php/warm_cron_status.php (sem precisar de PHP).
+    HTTP 200 = ok/running (ou DB fresco sem heartbeat); 503 = late/never/error.
+    """
+    payload, code = warm_cron_status.build_report()
+    return jsonify(payload), code
 
 @app.route('/api/warm', methods=['POST'])
 def api_warm():
     req = request.get_json() or {}
-    intervals_str = req.get('intervals', '1d,1h,30m')
+    intervals_str = req.get('intervals', '1d,1h,30m,15m')
     intervals = [i.strip() for i in intervals_str.split(',') if i.strip()]
     ativos = ATIVOS_B3_AMPLIADO
     started = warming.start_warm(ativos, intervals)

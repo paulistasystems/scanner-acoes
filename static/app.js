@@ -75,58 +75,115 @@ function setBadge(panel, state, text) {
     badge.innerText = text;
 }
 
-// Fluxo de carregamento: garante aquecimento (se DB frio) e então dispara todos os scans.
+// Fluxo de carregamento: warm (idempotente) até data_ready, senão scanners bloqueados.
 async function startup() {
+    setRunAllButton(false);
+    try {
+        const ok = await ensureDataReady();
+        if (!ok) {
+            markAllPanelsBlocked('⛔ dados incompletos');
+            return;
+        }
+        await runAll();
+    } catch (e) {
+        console.error("startup failed", e);
+        markAllPanelsBlocked('⛔ erro ao preparar dados');
+    } finally {
+        setRunAllButton(true);
+    }
+}
+
+function isDataReady(data) {
+    return !!(data && data.data_ready && data.data_ready.ready);
+}
+
+/** Garante universo × intervalos preenchidos. Dispara warm se preciso (idempotente). */
+async function ensureDataReady() {
+    let kickedWarm = false;
+    // até ~6h de warm longo (poll 3s)
+    for (let i = 0; i < 7200; i++) {
+        let data;
+        try {
+            const res = await fetch(`${BASE}/api/status`);
+            data = await res.json();
+        } catch (e) {
+            console.error("ensureDataReady status failed", e);
+            await sleep(3000);
+            continue;
+        }
+        updateStatusFrom(data);
+
+        if (isDataReady(data)) {
+            return true;
+        }
+
+        if (data.warming) {
+            // aguarda progresso
+        } else if (!kickedWarm) {
+            // incompleto e parado → dispara warm (prewarm só preenche o que falta)
+            try {
+                await fetch(`${BASE}/api/warm`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ intervals: WARM_INTERVALS })
+                });
+                kickedWarm = true;
+            } catch (e) {
+                console.error("ensureDataReady warm failed", e);
+            }
+        } else {
+            // warm já terminou mas ainda incompleto (falhas Yahoo etc.)
+            // tenta mais um kick a cada ~2 min de poll parado
+            if (i > 0 && i % 40 === 0) {
+                kickedWarm = false;
+            }
+        }
+        await sleep(3000);
+    }
+    return false;
+}
+
+function sleep(ms) {
+    return new Promise((r) => setTimeout(r, ms));
+}
+
+// Compat: botão "Forçar Warm" e painéis que esperam fim do worker
+function waitForWarm() {
+    return ensureDataReady();
+}
+
+function markAllPanelsBlocked(text) {
+    currentScanners.forEach((s) => {
+        const panel = panelFor(s.id);
+        if (!panel) return;
+        setBadge(panel, 'error', text);
+        const body = panel.querySelector('.table-container');
+        if (body) {
+            body.innerHTML = '<p class="placeholder">Scanners bloqueados até o warm completar todos os intervalos (1d, 1h, 30m, 15m) para o universo.</p>';
+        }
+    });
+}
+
+// Dispara todos os scanners em paralelo — só se data_ready.
+async function runAll() {
     setRunAllButton(false);
     try {
         const res = await fetch(`${BASE}/api/status`);
         const data = await res.json();
-        const fillState = (data.summary && typeof data.summary === 'object')
-            ? (data.summary.fill_state || 0) : 0;
-
-        if (data.warming) {
-            // Um aquecimento já está rodando (outra aba/sessão): apenas aguardar.
-            await waitForWarm();
-        } else if (fillState === 0) {
-            // DB frio (nunca aquecido): dispara aquecimento cobrindo todos os intervalos.
-            await fetch(`${BASE}/api/warm`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ intervals: WARM_INTERVALS })
-            });
-            await waitForWarm();
-        }
-        // DB já aquecido: segue direto para os scans.
-    } catch (e) {
-        console.error("startup status check failed", e);
-    } finally {
-        runAll();
-    }
-}
-
-// Resolve quando o aquecimento em background termina.
-function waitForWarm() {
-    return new Promise((resolve) => {
-        const check = async () => {
-            try {
-                const res = await fetch(`${BASE}/api/status`);
-                const data = await res.json();
-                updateStatusFrom(data);
-                if (!data.warming) { resolve(); return; }
-            } catch (e) {
-                console.error("waitForWarm status failed", e);
+        updateStatusFrom(data);
+        if (!isDataReady(data)) {
+            markAllPanelsBlocked('⛔ aguardando dados');
+            const ok = await ensureDataReady();
+            if (!ok) {
+                markAllPanelsBlocked('⛔ dados incompletos');
+                return;
             }
-            setTimeout(check, 3000);
-        };
-        check();
-    });
-}
-
-// Dispara todos os scanners em paralelo — cada painel preenche independentemente.
-function runAll() {
-    setRunAllButton(false);
-    const promises = currentScanners.map(s => runSingle(s));
-    Promise.allSettled(promises).finally(() => setRunAllButton(true));
+        }
+        const promises = currentScanners.map((s) => runSingle(s));
+        await Promise.allSettled(promises);
+    } finally {
+        setRunAllButton(true);
+    }
 }
 
 async function runSingle(scanner) {
@@ -158,6 +215,12 @@ async function runSingle(scanner) {
             setBadge(panel, 'loading', '⏳ aquecendo…');
             await waitForWarm();
             return runSingle(scanner);
+        }
+        if (data.not_ready || res.status === 503) {
+            setBadge(panel, 'error', '⛔ dados incompletos');
+            const msg = (data.data_ready && data.data_ready.message) || data.error || 'Warm incompleto';
+            body.innerHTML = `<p class="placeholder">${escapeHtml(msg)}</p>`;
+            return;
         }
         if (data.error) {
             setBadge(panel, 'error', '❌ erro');
@@ -273,21 +336,43 @@ function updateStatusFrom(data) {
     const dbSummary = document.getElementById('db-summary');
     if (dbSummary) {
         const s = data.summary;
+        const dr = data.data_ready;
+        let base = '';
         if (s && typeof s === 'object') {
-            dbSummary.innerText = `${s.bars ?? 0} barras · ${s.distinct_symbols ?? 0} ativos · ${s.fill_state ?? 0} preenchidos · ${s.fetch_failures ?? 0} falhas`;
+            base = `${s.bars ?? 0} barras · ${s.distinct_symbols ?? 0} ativos · ${s.fill_state ?? 0} preenchidos · ${s.fetch_failures ?? 0} falhas`;
         } else {
-            dbSummary.innerText = s || '';
+            base = s || '';
         }
+        if (dr && typeof dr === 'object') {
+            const gate = dr.ready ? '✅ pronto' : `⛔ ${dr.coverage_pct ?? 0}% (${dr.filled_pairs ?? 0}/${dr.expected_pairs ?? 0})`;
+            base = base ? `${base} · ${gate}` : gate;
+        }
+        dbSummary.innerText = base;
     }
 
     const wdiv = document.getElementById('warming-status');
-    if (data.warming) {
+    const dr = data.data_ready;
+    const showWarmUi = data.warming || (dr && !dr.ready);
+    if (showWarmUi) {
         wdiv.style.display = 'block';
         const wp = data.warm_progress;
-        const pct = wp && wp.total > 0 ? Math.round((wp.done / wp.total) * 100) : 0;
+        let pct = 0;
+        let detail = '';
+        if (data.warming && wp && wp.total > 0) {
+            pct = Math.round((wp.done / wp.total) * 100);
+            detail = `${wp.done}/${wp.total} - ${wp.last_symbol || ''}`;
+        } else if (dr && dr.expected_pairs > 0) {
+            pct = Math.round(dr.coverage_pct || 0);
+            const parts = (dr.by_interval || []).map(
+                (x) => `${x.interval}:${x.have}/${x.expected}`
+            );
+            detail = parts.length ? parts.join(' · ') : (dr.message || 'Aguardando dados…');
+        } else {
+            detail = 'Aguarde...';
+        }
         document.getElementById('warm-pct').innerText = pct;
         document.getElementById('warm-progress').value = pct;
-        document.getElementById('warm-detail').innerText = wp ? `${wp.done}/${wp.total} - ${wp.last_symbol}` : 'Aguarde...';
+        document.getElementById('warm-detail').innerText = detail;
     } else {
         wdiv.style.display = 'none';
     }

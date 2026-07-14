@@ -1,0 +1,12 @@
+FROM python:3.9-slim-bookworm
+WORKDIR /app
+COPY requirements-py39.txt /app/requirements-py39.txt
+RUN pip install --no-cache-dir -r requirements-py39.txt
+COPY app.py passenger_wsgi.py data_layer.py warming.py warm_cron.py \
+     warm_cron_status.py indicators.py scanners_core.py \
+     symbol_store.py symbols_fallback.py /app/
+ENV PYTHONUNBUFFERED=1 \
+    SCANNER_DB=/data/scanner.db \
+    SCANNER_CHART_URL=http://php:8008/yahoo_chart.php
+ENTRYPOINT ["python", "warm_cron.py"]
+CMD ["1d", "1h", "30m", "15m"]

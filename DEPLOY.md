@@ -23,13 +23,10 @@ servidor **Phusion Passenger (DirectAdmin)** em `paulista.dev/scanner`.
 ./deploy.sh
 ```
 
-O script `deploy.sh` faz tudo:
-1. Executa `./build.sh` (build de packages Linux)
-2. Para servidor local (se rodando)
-3. Sincroniza DB remoto → local (preserva dados aquecidos)
-4. Sobe arquivos da app (smart sync: apenas arquivos mudados)
-5. Sobe site-packages (apenas se build mudou)
-6. Verifica a API no final
+O script `deploy.sh` sobe **só a aplicação** (código / static / `.env` / site-packages se o build mudou).
+
+**Não** baixa nem envia `scanner.db` (exclusão explícita no mirror + stage sem DB).
+Warm e dados ficam no servidor (cron / `POST /api/warm`).
 
 ### Deploy forçado (se necessário)
 
@@ -84,7 +81,7 @@ Hash-based comparison para evitar uploads desnecessários:
 
 ### 🚫 NÃO subir (o script já ignora)
 
-- `scanner.db` — banco SQLite gerado em runtime. Preservado pelo sync.
+- `scanner.db` — banco SQLite de runtime. **Fora do deploy** (nunca sync).
 - `__pycache__/`, `*.pyc`, `venv39/`, `venv313/`
 - `scanner_interface_Streamlit.py`, `scanner_abertura.py`, `painel_bd.py` — Streamlit dormentes.
 - `*.txt` (transcrições), `tools/`
@@ -141,7 +138,15 @@ curl -s https://paulista.dev/scanner/api/status | python3 -m json.tool
 ```
 
 > Universal = 220+ ativos × intervalos. Espere 5–15 min.
-> **Alternativa**: warm local (`./run_web.sh`) + upload do DB (seção acima).
+> **Dev local (Docker/OrbStack)** — validar warm e scanners **antes** do deploy:
+>
+> ```bash
+> ./run_docker.sh up
+> ./run_docker.sh warm              # só volume local
+> open http://localhost:8080/scanner/
+> ```
+>
+> O `deploy.sh` sobe **código**, não `scanner.db`. Warm em produção: `POST /api/warm` ou cron no servidor.
 
 ---
 

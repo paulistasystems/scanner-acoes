@@ -1,0 +1,16 @@
+# OpenLiteSpeed (GPLv3) — front HTTP
+FROM litespeedtech/openlitespeed:latest
+
+COPY docker/ols/httpd_config.conf /ols-config/httpd_config.conf
+COPY docker/ols/vhconf.conf /ols-config/vhconf.conf
+COPY docker/ols/bootstrap.sh /ols-bootstrap.sh
+
+RUN chmod +x /ols-bootstrap.sh \
+    && mkdir -p /usr/local/lsws/conf/vhosts/scanner \
+                /var/www/vhosts/scanner/html \
+                /var/www/vhosts/scanner/logs \
+    && cp /ols-config/httpd_config.conf /usr/local/lsws/conf/httpd_config.conf \
+    && cp /ols-config/vhconf.conf /usr/local/lsws/conf/vhosts/scanner/vhconf.conf \
+    && echo 'scanner ols ok' > /var/www/vhosts/scanner/html/index.html
+
+ENTRYPOINT ["/ols-bootstrap.sh"]

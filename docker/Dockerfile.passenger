@@ -1,0 +1,42 @@
+# Phusion Passenger OPEN SOURCE via Ruby gem (Standalone) + Python 3.9
+# (APT da Phusion falhou GPG no bookworm arm64; gem é o caminho estável.)
+FROM python:3.9-slim-bookworm
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      ca-certificates curl \
+      ruby ruby-dev build-essential \
+      libcurl4-openssl-dev libssl-dev zlib1g-dev procps \
+    && gem install passenger --no-document \
+    && passenger -v \
+    && rm -rf /var/lib/apt/lists/* /root/.gem
+
+WORKDIR /app
+
+COPY requirements-py39.txt /app/requirements-py39.txt
+RUN pip install --no-cache-dir -r requirements-py39.txt
+
+COPY app.py passenger_wsgi.py data_layer.py warming.py warm_cron.py \
+     warm_cron_status.py indicators.py scanners_core.py \
+     symbol_store.py symbols_fallback.py /app/
+COPY static /app/static
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    SCANNER_DB=/data/scanner.db \
+    SCANNER_CHART_URL=http://php:8008/yahoo_chart.php \
+    PASSENGER_MAX_REQUESTS=25
+
+EXPOSE 3000
+
+CMD ["bash", "-lc", "exec passenger start /app \
+  --address 0.0.0.0 \
+  --port 3000 \
+  --app-type wsgi \
+  --startup-file passenger_wsgi.py \
+  --python python3 \
+  --min-instances 1 \
+  --max-pool-size 2 \
+  --max-requests ${PASSENGER_MAX_REQUESTS:-25} \
+  --log-level 2"]

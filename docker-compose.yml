@@ -1,0 +1,92 @@
+# Scanner — stack local OPEN SOURCE próximo da produção (OrbStack / Docker).
+#
+#   OpenLiteSpeed (GPLv3)  → front HTTP, subpath /scanner
+#   Passenger OSS          → WSGI (passenger_wsgi:application)  [NÃO Enterprise]
+#   PHP                    → yahoo_chart.php (egress Yahoo)
+#   volume scanner-data    → /data/scanner.db  (isolado do DB de produção)
+#
+# Nota: em produção costuma ser LiteSpeed Enterprise + Passenger; aqui usamos
+# as edições abertas. OLS faz reverse-proxy para o Passenger Standalone
+# (combinação suportável: Passenger “nativo” é nginx/Apache; atrás de OLS
+# ele roda como backend WSGI — mesmo app, mesmo passenger_wsgi.py).
+#
+# Uso (LOCAL only — zero FTP/deploy):
+#   ./run_docker.sh up
+#   open http://localhost:8080/scanner/
+#   ./run_docker.sh warm          # preenche só o volume Docker
+#   ./run_docker.sh status
+#   ./run_docker.sh down
+# Deploy produção = passo separado (./deploy.sh) quando o local estiver ok.
+
+services:
+  openlitespeed:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.ols
+    ports:
+      - "8080:80"
+      # Admin OLS (opcional; desabilitado na conf, porta só se quiser debug)
+      # - "7080:7080"
+    volumes:
+      - ./docker/ols/httpd_config.conf:/ols-config/httpd_config.conf:ro
+      - ./docker/ols/vhconf.conf:/ols-config/vhconf.conf:ro
+    depends_on:
+      - passenger
+      - php
+    restart: unless-stopped
+
+  passenger:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.passenger
+    environment:
+      SCANNER_DB: /data/scanner.db
+      SCANNER_CHART_URL: http://php:8008/yahoo_chart.php
+      PASSENGER_MAX_REQUESTS: ${PASSENGER_MAX_REQUESTS:-25}
+    volumes:
+      - .:/app
+      - scanner-data:/data
+      - ./tmp:/app/tmp
+    working_dir: /app
+    # expõe só na rede compose; entrada pública é o OLS :8080
+    expose:
+      - "3000"
+    depends_on:
+      - php
+    restart: unless-stopped
+
+  php:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.php
+    environment:
+      SCANNER_DB: /data/scanner.db
+    volumes:
+      - ./php:/var/www/php:ro
+      - scanner-data:/data
+    expose:
+      - "8008"
+    restart: unless-stopped
+
+  # Prewarm só do volume compose (nunca produção)
+  #   docker compose --profile warm run --rm warm
+  #   docker compose --profile warm run --rm warm 1h
+  warm:
+    profiles: ["warm"]
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.warm
+    environment:
+      SCANNER_DB: /data/scanner.db
+      SCANNER_CHART_URL: http://php:8008/yahoo_chart.php
+    volumes:
+      - .:/app
+      - scanner-data:/data
+      - ./tmp:/app/tmp
+    working_dir: /app
+    depends_on:
+      - php
+
+volumes:
+  scanner-data:
+    name: scanner_acoes_data
