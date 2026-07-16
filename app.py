@@ -171,6 +171,8 @@ def api_scan():
             elif scanner_id == "abertura_confluencia":
                 min_ratio = float(request.args.get('vol_ratio_min', 0.8))
                 df = s["func"](ativos, min_ratio)
+            elif scanner_id == "monitoramento_intraday":
+                df = s["func"](ativos)
             else:
                 df = s["func"](ativos)
                 
