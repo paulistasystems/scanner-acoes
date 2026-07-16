@@ -201,6 +201,14 @@ async function runSingle(scanner) {
     const excludeFailures = document.getElementById('cb-exclude-failures')?.checked || false;
     url += `&exclude_failures=${excludeFailures}`;
 
+    // Add custom symbols to request if scanner supports it
+    if (scanner.uses_symbols) {
+        const customSymbols = document.getElementById('custom-symbols-input')?.value.trim();
+        if (customSymbols) {
+            url += `&symbols=${encodeURIComponent(customSymbols)}`;
+        }
+    }
+
     if (scanner.uses_profile) {
         const adx = document.getElementById('adx_min').value;
         const rsi_min = document.getElementById('rsi_min').value;

@@ -87,7 +87,13 @@
                 </div>
             </div>
 
-            <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+            <div id="symbols-controls" style="margin-top: 15px; padding-top: 15px; border-top: 1px solid #333;">
+                <h3 class="config-title">Ativos — aplicado aos scanners Intraday / Abertura (Opcional)</h3>
+                <p class="desc-text">Se vazio, analisa a lista inteira. Separar por vírgulas (ex: PETR4.SA, VALE3.SA).</p>
+                <input type="text" id="custom-symbols-input" placeholder="PETR4.SA, VALE3.SA, BBDC4.SA..." style="width: 100%; max-width: 500px; padding: 8px; border-radius: 4px; border: 1px solid #555; background: #222; color: #fff;">
+            </div>
+
+            <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 15px;">
                 <button id="btn-run-all" class="primary-btn">🔄 Atualizar Todos os Scanners</button>
                 <label style="cursor: help;" title="Ignora os ativos que estão sem dados ou com download falho no Yahoo Finance. Usar apenas se o Warmup travar em ativos problemáticos.">
                     <input type="checkbox" id="cb-exclude-failures"> Ignorar ativos com falha

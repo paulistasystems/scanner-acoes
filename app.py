@@ -61,12 +61,14 @@ SCANNERS_REGISTRY = {
     "abertura_candidatos": {
         "name": "Abertura - Candidatos 15m",
         "func": scanners_core.coletar_candidatos,
-        "uses_profile": False
+        "uses_profile": False,
+        "uses_symbols": True
     },
     "abertura_confluencia": {
         "name": "Abertura - Confluência 15m/30m",
         "func": scanners_core.coletar_confluencia_15m_30m,
-        "uses_profile": False
+        "uses_profile": False,
+        "uses_symbols": True
     },
     "monitoramento_intraday": {
         "name": "Monitoramento Intraday",
@@ -143,13 +145,21 @@ def api_scan():
     if blacklist:
         ativos = [sym for sym in ativos if sym not in blacklist]
 
-    # Se o modo restrito foi acionado, remove os que tiverem qualquer falha pontual
-    if exclude_failures and ready.get("ready"):
-        df_fill = data_layer.read_fill_state()
-        if not df_fill.empty:
-            filled_set = set(zip(df_fill['symbol'], df_fill['interval']))
-            intervals = ["1d", "1h", "30m", "15m"]
-            ativos = [sym for sym in ativos if all((sym, iv) in filled_set for iv in intervals)]
+    custom_symbols_str = request.args.get('symbols', '').strip()
+    if custom_symbols_str and s.get("uses_symbols"):
+        # Se vier lista do frontend e o scanner aceitar, usamos essa lista ao inves da completa.
+        # Format "PETR4.SA,VALE3.SA"
+        custom_symbols = [x.strip() for x in custom_symbols_str.split(',') if x.strip()]
+        if custom_symbols:
+            ativos = custom_symbols
+    else:
+        # Se o modo restrito foi acionado, remove os que tiverem qualquer falha pontual
+        if exclude_failures and ready.get("ready"):
+            df_fill = data_layer.read_fill_state()
+            if not df_fill.empty:
+                filled_set = set(zip(df_fill['symbol'], df_fill['interval']))
+                intervals = ["1d", "1h", "30m", "15m"]
+                ativos = [sym for sym in ativos if all((sym, iv) in filled_set for iv in intervals)]
 
     try:
         if s["uses_profile"]:
