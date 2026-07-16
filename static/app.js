@@ -382,15 +382,49 @@ function updateStatusFrom(data) {
 
     const wdiv = document.getElementById('warming-status');
     const dr = data.data_ready;
-    const showWarmUi = data.warming || (dr && !dr.ready);
+
+    // Mostra se warming (worker) rodando, ou se incompleto (missing today requirements > 0)
+    let isMissingFiles = false;
+    let isFullyDone = false;
+    if (data.today_requirements) {
+        if (data.today_requirements.amount_still_missing > 0) {
+            isMissingFiles = true;
+        } else {
+            // Se hoje não falta mais nada, passamos essa flag
+            isFullyDone = true;
+        }
+    }
+
+    const showWarmUi = data.warming || (dr && !dr.ready) || isMissingFiles || isFullyDone;
+
     if (showWarmUi) {
         wdiv.style.display = 'block';
-        const wp = data.warm_progress;
         let pct = 0;
         let detail = '';
-        if (data.warming && wp && wp.total > 0) {
+
+        if (data.today_requirements && data.today_requirements.total_assets_to_scan_today > 0) {
+            const tr = data.today_requirements;
+            const wp = data.warm_progress;
+
+            pct = Math.round((tr.amount_fresh / tr.total_assets_to_scan_today) * 100);
+
+            if (tr.amount_still_missing > 0) {
+                if (data.warming && wp && wp.total > 0) {
+                    detail = `Baixando dados do dia... [ ${wp.done}/${wp.total} no loop geral ] — Faltam: ${tr.amount_still_missing} itens`;
+                    if (wp.last_symbol) detail += ` — Verificando: ${wp.last_symbol}`;
+                } else {
+                    detail = `Faltam baixar/atualizar ${tr.amount_still_missing} itens hoje`;
+                    if (tr.missing_items_list && tr.missing_items_list.length > 0) {
+                        detail += ` (ex: ${tr.missing_items_list.join(', ')})`;
+                    }
+                }
+            } else {
+                detail = `Concluído: ${tr.amount_fresh} itens atualizados (100% capturado para hoje)`;
+            }
+        } else if (data.warming && data.warm_progress && data.warm_progress.total > 0) {
+            const wp = data.warm_progress;
             pct = Math.round((wp.done / wp.total) * 100);
-            detail = `${wp.done}/${wp.total} - ${wp.last_symbol || ''}`;
+            detail = `Aquecendo cache global: ${wp.done}/${wp.total} - ${wp.last_symbol || ''}`;
         } else if (dr && dr.expected_pairs > 0) {
             pct = Math.round(dr.coverage_pct || 0);
             const parts = (dr.by_interval || []).map(

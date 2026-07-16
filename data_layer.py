@@ -888,6 +888,16 @@ def read_fill_state():
         return pd.DataFrame()
     return pd.DataFrame(rows, columns=["symbol", "interval", "last_filled_at"])
 
+def read_latest_bars_summary():
+    """Retorna o candle mais recente (ts, close, volume) de cada par (symbol, interval)
+    para uso em diagnóstico rápido (ex: /api/probe), sem carregar milhares de linhas."""
+    _ensure_schema()
+    with _lock:
+        # SQLite garante que colunas não-agregadas vêm da mesma linha que satisfez o MAX()
+        rows = _connect().execute(
+            "SELECT symbol, interval, MAX(ts), close, volume FROM bars GROUP BY symbol, interval"
+        ).fetchall()
+    return {(r[0], r[1]): {"last_ts": r[2], "last_close": r[3], "last_volume": r[4]} for r in rows}
 
 def prewarm(symbols, intervals, attempts=3, progress=None):
     """Passo de AQUISIÇÃO: garante que todos os (symbol, interval) estejam

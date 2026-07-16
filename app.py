@@ -187,11 +187,103 @@ def api_status():
     exclude_failures = request.args.get('exclude_failures', 'false').lower() == 'true'
     w_status = warming.status()
     ready = data_layer.data_ready(exclude_failures=exclude_failures)
+
+    # Calculate today's missing requirements to supersede the raw overall counts
+    from symbols_fallback import ATIVOS_B3_AMPLIADO
+    intervals = ["1d", "1h", "30m", "15m"]
+
+    now_brt = data_layer._now_brt()
+    blacklist = set(data_layer.get_blacklist())
+    ativos_validos = [sym for sym in ATIVOS_B3_AMPLIADO if sym not in blacklist]
+
+    missing_items = 0
+    missing_items_list = []
+    total_items = len(ativos_validos) * len(intervals)
+
+    # If the gate is already ready, there's nothing missing
+    if not ready.get("ready"):
+        for sym in ativos_validos:
+            for iv in intervals:
+                if not data_layer._is_filled(sym, iv, now_brt):
+                    missing_items += 1
+                    if len(missing_items_list) < 10:
+                        missing_items_list.append(f"{sym}({iv})")
+
+    today_requirements = {
+        "total_assets_to_scan_today": total_items,
+        "amount_still_missing": missing_items,
+        "amount_fresh": total_items - missing_items,
+        "missing_items_list": missing_items_list
+    }
+
     return jsonify({
         "summary": data_layer.db_summary(),
         "warming": w_status["running"],
         "warm_progress": w_status,
+        "today_requirements": today_requirements,
         "data_ready": ready,
+    })
+
+@app.route('/api/probe')
+def api_probe():
+    """Diagnóstico do prewarm: dispara o aquecimento (caso não esteja rodando)
+    e mostra EXATAMENTE o que AINDA FALTA baixar/atualizar para a sessão de hoje."""
+
+    from symbols_fallback import ATIVOS_B3_AMPLIADO
+    intervals = ["1d", "1h", "30m", "15m"]
+
+    # Inicia o warmup (worker roda em background) se não houver nenhum rodando.
+    warm_started = warming.start_warm(ATIVOS_B3_AMPLIADO, intervals)
+
+    w_status = warming.status()
+
+    # Importamos data_layer e usamos a lógica exata de "dados frescos" para a sessão corrente.
+    import data_layer
+    data_layer._ensure_schema()
+    now_brt = data_layer._now_brt()
+
+    blacklist = set(data_layer.get_blacklist())
+    ativos_validos = [sym for sym in ATIVOS_B3_AMPLIADO if sym not in blacklist]
+
+    # Levanta rapidamente todos as falhas que ocorreram nos fetches.
+    df_fail = data_layer.list_failures()
+    failed_map = {}
+    if not df_fail.empty:
+        for _, row in df_fail.iterrows():
+            failed_map[(row['symbol'], row['interval'])] = row['last_error']
+
+    items_to_fetch = []
+
+    # Avaliamos usando o is_filled() oficial do prewarm.
+    # O Python dirá extamente quem precisa ir para o Yahoo na data e hora atuais.
+    for sym in ativos_validos:
+        for iv in intervals:
+            # Se for Falso, significa que está faltando (ou desatualizado pro horário).
+            if not data_layer._is_filled(sym, iv, now_brt):
+                # Se falhou numa tentativa recenete, puxa a mensagem do erro logada.
+                err_msg = failed_map.get((sym, iv))
+
+                info = {
+                    "symbol": sym,
+                    "interval": iv
+                }
+                if err_msg:
+                    info["last_failed_error"] = str(err_msg)
+
+                items_to_fetch.append(info)
+
+    return jsonify({
+        "status": {
+            "background_worker_running": w_status["running"],
+            "triggered_just_now": warm_started,
+            "overall_progress_done": w_status["done"],
+            "overall_progress_total": w_status["total"]
+        },
+        "today_requirements": {
+            "total_assets_to_scan_today": len(ativos_validos) * len(intervals),
+            "amount_still_missing": len(items_to_fetch)
+        },
+        "missing_items_to_fetch": items_to_fetch
     })
 
 @app.route('/api/warm_cron_status')
