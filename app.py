@@ -67,6 +67,12 @@ SCANNERS_REGISTRY = {
         "name": "Abertura - Confluência 15m/30m",
         "func": scanners_core.coletar_confluencia_15m_30m,
         "uses_profile": False
+    },
+    "monitoramento_intraday": {
+        "name": "Monitoramento Intraday",
+        "func": scanners_core.monitoramento_intraday,
+        "uses_profile": False,
+        "uses_symbols": True
     }
 }
 

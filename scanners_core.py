@@ -1275,3 +1275,118 @@ def coletar_confluencia_15m_30m(ativos, rvol_min):
             continue
 
     return pd.DataFrame(resultados)
+
+def monitoramento_intraday(ativos):
+    """
+    Monitoramento Intraday (10:00 - 16:30)
+    Entrada prioritária: rompimento da máxima anterior com volume ou pullback na VWAP/EMA9/20 no 30m.
+    Descarta após 14:30 se sem confluência.
+    """
+    hoje = data_layer.session_today()
+    if hoje is None:
+        return pd.DataFrame()
+
+    resultados = []
+    _prewarm_com_progresso(ativos, ['1d', '30m'])
+
+    # Horário atual (BRT)
+    now = data_layer._now_brt()
+    is_late = now.hour > 14 or (now.hour == 14 and now.minute >= 30)
+
+    for symbol in ativos:
+        try:
+            df_d = baixar_dados(symbol, '1d', '60d')
+            if df_d is None or len(df_d) < 2:
+                continue
+
+            # Máxima do dia ANTERIOR
+            df_d_past = df_d[df_d.index.date < hoje]
+            if df_d_past.empty:
+                continue
+            max_anterior = float(df_d_past.iloc[-1]['High'])
+            fechamento_anterior = float(df_d_past.iloc[-1]['Close'])
+
+            # RSI Diário para avaliar risco de gap down ou sobrecompra
+            df_d['RSI'] = ta.rsi(df_d['Close'], length=14)
+            rsi_diario = float(df_d['RSI'].iloc[-1]) if not pd.isna(df_d['RSI'].iloc[-1]) else 50.0
+
+            df_30 = baixar_dados(symbol, '30m', '15d')
+            if df_30 is None or len(df_30) < 20:
+                continue
+
+            df_30_hoje = df_30[df_30.index.date == hoje]
+            if df_30_hoje.empty:
+                continue
+
+            last_30 = df_30.iloc[-1]
+            close = float(last_30['Close'])
+
+            df_30['EMA9'] = ta.ema(df_30['Close'], length=9)
+            df_30['EMA20'] = ta.ema(df_30['Close'], length=20)
+            ema9 = float(df_30['EMA9'].iloc[-1])
+            ema20 = float(df_30['EMA20'].iloc[-1])
+
+            # VWAP do dia
+            df_30_hoje = df_30[df_30.index.date == hoje].copy()
+            df_30_hoje['Typical'] = (df_30_hoje['High'] + df_30_hoje['Low'] + df_30_hoje['Close']) / 3
+            df_30_hoje['Vol_x_TP'] = df_30_hoje['Typical'] * df_30_hoje['Volume']
+            vol_total = df_30_hoje['Volume'].sum()
+            vwap = df_30_hoje['Vol_x_TP'].sum() / vol_total if vol_total > 0 else close
+
+            # Volume ratio (RVOL) do 30m
+            vol_media = df_30['Volume'].rolling(20).mean()
+            vol_med_val = float(vol_media.iloc[-1]) if float(vol_media.iloc[-1]) > 0 else 1.0
+            vol_last = float(last_30['Volume'])
+            rvol = vol_last / vol_med_val
+
+            # Setup evaluation
+            dist_vwap = abs(close - vwap) / close
+            dist_ema9 = abs(close - ema9) / close
+            dist_ema20 = abs(close - ema20) / close
+
+            # 0.5% threshold for pullback
+            is_pullback = (dist_vwap <= 0.005) or (dist_ema9 <= 0.005) or (dist_ema20 <= 0.005)
+            is_rompimento_1h = False # Precisaria ler o 1h, ou usar o 30m como proxy de fluxo contínuo
+            is_rompimento = close > max_anterior and rvol > 1.0
+
+            setup = "Nenhum"
+            status = "⏳ Aguardando"
+
+            risco_venda = rsi_diario > 70
+            alerta_rsi = " | ⚠️ RSI no Diário sobrecomprado" if risco_venda else ""
+
+            if is_rompimento:
+                setup = "🚀 Rompimento Máx. Ant."
+                status = f"✅ Entrada{alerta_rsi}"
+            elif is_pullback and close >= vwap and rvol > 1.0: # Pullback conditions + Volume
+                setup = "🧲 Pullback (VWAP/EMA)"
+                status = f"✅ Entrada{alerta_rsi}"
+            elif close > max_anterior:
+                setup = "🚀 Rompimento"
+                status = "⚠️ Sem Volume no Rompimento"
+            elif is_pullback and close >= vwap:
+                setup = "🧲 Pullback na Média"
+                status = "👀 Monitorar Volume"
+            elif dist_vwap <= 0.01 or dist_ema9 <= 0.01:
+                setup = "Próximo à Média"
+                status = "👀 Monitorar"
+
+            if is_late and "✅ Entrada" not in status:
+                status = "🗑️ Descartado (>14h30 - s/ confluência clara)"
+
+            resultados.append({
+                'Ativo': symbol.replace('.SA', ''),
+                'Preço': round(close, 2),
+                'Máx Ant.': round(max_anterior, 2),
+                'VWAP': round(vwap, 2),
+                'EMA 9 (30m)': round(ema9, 2),
+                'EMA 20 (30m)': round(ema20, 2),
+                'RVOL 30m': round(rvol, 2),
+                'RSI 1d': round(rsi_diario, 1),
+                'Setup': setup,
+                'Status': status
+            })
+        except Exception:
+            continue
+
+    return pd.DataFrame(resultados)
