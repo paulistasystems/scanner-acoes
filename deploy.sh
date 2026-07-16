@@ -22,7 +22,7 @@ mkdir -p "$STAGE/static" "$STAGE/tmp"
 # Preserve original modification times (mtime) so LFTP doesn't think files changed.
 cp -p app.py passenger_wsgi.py scanners_core.py warming.py indicators.py \
    data_layer.py symbol_store.py symbols_fallback.py warm_cron.py warm_cron_status.py "$STAGE/"
-cp -p static/app.js static/index.html static/style.css "$STAGE/static/"
+cp -p static/* "$STAGE/static/"
 cp -p requirements-py39.txt .python-version .env "$STAGE/"
 date > "$STAGE/tmp/restart.txt"
 
@@ -110,7 +110,7 @@ mirror --reverse --delete --only-newer --parallel=4 --verbose \
   -X '__pycache__' -X '__pycache__/**' \
   $STAGE /scanner
 # Passenger restart (só touch; não mexe no DB)
-mkdir -p /scanner/tmp
+mkdir -f /scanner/tmp 2>/dev/null || true
 put $STAGE/tmp/restart.txt -o /scanner/tmp/restart.txt
 bye
 EOF
