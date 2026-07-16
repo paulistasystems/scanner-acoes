@@ -62,19 +62,22 @@ SCANNERS_REGISTRY = {
         "name": "Abertura - Candidatos 15m",
         "func": scanners_core.coletar_candidatos,
         "uses_profile": False,
-        "uses_symbols": True
+        "uses_symbols": True,
+        "group": "intraday"
     },
     "abertura_confluencia": {
         "name": "Abertura - Confluência 15m/30m",
         "func": scanners_core.coletar_confluencia_15m_30m,
         "uses_profile": False,
-        "uses_symbols": True
+        "uses_symbols": True,
+        "group": "intraday"
     },
     "monitoramento_intraday": {
         "name": "Monitoramento Intraday",
         "func": scanners_core.monitoramento_intraday,
         "uses_profile": False,
-        "uses_symbols": True
+        "uses_symbols": True,
+        "group": "intraday"
     }
 }
 
@@ -83,6 +86,10 @@ SCANNERS_REGISTRY = {
 @app.route('/')
 def index():
     return send_from_directory('static', 'index.html')
+
+@app.route('/intraday')
+def intraday():
+    return send_from_directory('static', 'intraday.html')
 
 @app.route('/<path:path>')
 def static_proxy(path):
@@ -93,7 +100,13 @@ def static_proxy(path):
 def get_scanners():
     scanners = []
     for k, v in SCANNERS_REGISTRY.items():
-        scanners.append({"id": k, "name": v["name"], "uses_profile": v["uses_profile"]})
+        scanners.append({
+            "id": k,
+            "name": v["name"],
+            "uses_profile": v["uses_profile"],
+            "uses_symbols": v.get("uses_symbols", False),
+            "group": v.get("group", "swing")
+        })
     return jsonify({"scanners": scanners})
 
 def clean_nan(obj):

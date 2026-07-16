@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Scanner Intraday / Abertura</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <header>
+        <h1>⚡ SCANNER INTRADAY / ABERTURA - BRASIL</h1>
+        <div style="margin-top: 10px;">
+            <a href="index.html" style="color: #66b3ff; text-decoration: none;">⬅️ Voltar para o Scanner Diário (Swing)</a>
+        </div>
+    </header>
+
+    <main>
+        <!-- DB Panel (Collapsible) -->
+        <details id="db-panel">
+            <summary>🗄️ Painel de Banco de Dados</summary>
+            <div class="panel-content">
+                <div class="panel-header">
+                    <span id="db-summary">Carregando summary...</span>
+                    <div>
+                        <button id="btn-refresh">🔄 Refresh DB</button>
+                        <button id="btn-warm">🔥 Forçar Warm</button>
+                    </div>
+                </div>
+                <!-- Simple status view for intraday -->
+                <div id="tab-fill" class="tab-content active" style="margin-top: 10px;">
+                    <div class="table-container" id="table-fill"></div>
+                </div>
+            </div>
+        </details>
+
+        <!-- Scanner Configuration -->
+        <section class="config-section">
+            <div id="symbols-controls">
+                <h3 class="config-title">Filtro de Ativos Específicos</h3>
+                <p class="desc-text">Se vazio, analisa a lista inteira do mercado. Separar por vírgulas (ex: PETR4.SA, VALE3.SA).</p>
+                <input type="text" id="custom-symbols-input" placeholder="PETR4.SA, VALE3.SA, BBDC4.SA..." style="width: 100%; max-width: 500px; padding: 8px; border-radius: 4px; border: 1px solid #555; background: #222; color: #fff;">
+            </div>
+
+            <!-- Fake exclude logic just so app.js doesn't crash if it tries to read the checkbox -->
+            <input type="checkbox" id="cb-exclude-failures" style="display: none;">
+
+            <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 15px;">
+                <button id="btn-run-all" class="primary-btn">🔄 Atualizar Todos os Scanners</button>
+            </div>
+        </section>
+
+        <!-- Warming Status -->
+        <div id="warming-status" class="warming-status" style="display: none;">
+            <p>🔥 Baixando dados para o cache local (<span id="warm-pct">0</span>%)</p>
+            <progress id="warm-progress" value="0" max="100"></progress>
+            <p class="small" id="warm-detail">Aguarde...</p>
+        </div>
+
+        <section class="results-section">
+            <div id="grid-intraday" class="scanners-grid"></div>
+        </section>
+    </main>
+
+    <script src="intraday.js"></script>
+</body>
+</html>
