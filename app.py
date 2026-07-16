@@ -87,7 +87,7 @@ SCANNERS_REGISTRY = {
 def index():
     return send_from_directory('static', 'index.html')
 
-@app.route('/intraday')
+@app.route('/day')
 def intraday():
     return send_from_directory('static', 'intraday.html')
 

@@ -1,4 +1,4 @@
-const BASE = location.pathname.replace(/\/intraday$/, '').replace(/\/$/, '');
+const BASE = location.pathname.replace(/\/day$/, '').replace(/\/$/, '');
 
 // Apenas os intervalos usados nos scanners intraday (1d, 30m, 15m)
 const WARM_INTERVALS = "1d,30m,15m";
