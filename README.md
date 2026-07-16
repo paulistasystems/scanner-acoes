@@ -1,9 +1,7 @@
 # Scanner de Ações B3 — Branch `vanilla-web-scanner`
 
 Porte **full-parity** do scanner para **HTML/JS vanilla + Flask/WSGI**, deployável em
-**Phusion Passenger (DirectAdmin)** com **Python 3.9**. O branch `master` continua sendo
-a fonte de verdade Streamlit/3.13 — este branch **nunca deve ser mergeado ao master**.
-
+**Phusion Passenger (DirectAdmin)** com **Python 3.9**. 
 ## Stack
 
 - **Backend:** Flask + `passenger_wsgi.py` (entry point do Passenger)
