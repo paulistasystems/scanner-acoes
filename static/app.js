@@ -10,6 +10,7 @@ const PROFILES = {
 const WARM_INTERVALS = "1d,1h,30m,15m";
 
 let currentScanners = [];
+const scannerResults = {}; // id -> { name, columns, rows }
 
 async function init() {
     setupEventListeners();
@@ -41,6 +42,9 @@ function buildGrid() {
     fixedGrid.innerHTML = '';
 
     currentScanners.forEach(s => {
+        // Os scanners de grupo "intraday" (Abertura / Monitoramento) ficam na página /day.
+        if (s.group === 'intraday') return;
+
         const panel = document.createElement('div');
         panel.className = 'scanner-panel';
         panel.dataset.id = s.id;
@@ -179,7 +183,7 @@ async function runAll() {
                 return;
             }
         }
-        const promises = currentScanners.map((s) => runSingle(s));
+        const promises = currentScanners.filter((s) => s.group !== 'intraday').map((s) => runSingle(s));
         await Promise.allSettled(promises);
     } finally {
         setRunAllButton(true);
@@ -242,6 +246,8 @@ async function runSingle(scanner) {
         if (!data.rows || data.rows.length === 0) {
             setBadge(panel, 'empty', '— vazio');
             body.innerHTML = '<p class="placeholder">Nenhum ativo encontrado.</p>';
+            delete scannerResults[scanner.id];
+            updateSummary();
             return;
         }
 
@@ -250,6 +256,8 @@ async function runSingle(scanner) {
 
         setBadge(panel, 'done', `✅ ${data.rows.length} ativos`);
         renderTable(body, data.columns, data.rows);
+        scannerResults[scanner.id] = { name: scanner.name, columns: data.columns, rows: data.rows };
+        updateSummary();
     } catch (e) {
         setBadge(panel, 'error', '❌ rede');
         body.innerHTML = `<p style="color:red">Erro de rede: ${escapeHtml(e.message)}</p>`;
@@ -308,6 +316,7 @@ function setupEventListeners() {
     document.getElementById('btn-warm').addEventListener('click', () => triggerWarm());
 
     document.getElementById('btn-run-all').addEventListener('click', startup);
+    document.getElementById('btn-copy-prompt').addEventListener('click', copyPrompt);
 
     const btnClearBlacklist = document.getElementById('btn-clear-blacklist');
     if (btnClearBlacklist) {
@@ -461,6 +470,140 @@ async function refreshDB() {
     loadFill();
 }
 
+function updateSummary() {
+    const section = document.getElementById('summary-section');
+    const content = document.getElementById('summary-content');
+    const copyBtn = document.getElementById('btn-copy-prompt');
+    if (!section || !content) return;
+
+    const ids = currentScanners.map(s => s.id).filter(id => scannerResults[id] && scannerResults[id].rows.length);
+    if (ids.length === 0) {
+        section.style.display = 'none';
+        if (copyBtn) copyBtn.style.display = 'none';
+        content.innerHTML = '';
+        return;
+    }
+
+    section.style.display = 'block';
+    if (copyBtn) copyBtn.style.display = 'inline-block';
+
+    let html = '';
+    ids.forEach(id => {
+        const r = scannerResults[id];
+        html += `<h3 style="margin: 12px 0 6px; color: #66b3ff;">${escapeHtml(r.name)} (${r.rows.length})</h3>`;
+        html += '<table><thead><tr>';
+        r.columns.forEach(c => { html += `<th>${escapeHtml(c.label)}</th>`; });
+        html += '</tr></thead><tbody>';
+        r.rows.forEach(row => {
+            html += '<tr>';
+            r.columns.forEach(c => {
+                let val = row[c.key];
+                if (val === null || val === undefined) val = "";
+                else if (typeof val === 'number') val = (val % 1 !== 0) ? val.toFixed(2) : val;
+                if (val === '✅') html += `<td style="color: #00c853;">${val}</td>`;
+                else if (val === '❌') html += `<td style="color: #ff5252;">${val}</td>`;
+                else if (typeof val === 'string' && val.includes('✅')) html += `<td style="color: #00c853;">${val}</td>`;
+                else if (typeof val === 'string' && val.includes('⚠️')) html += `<td style="color: #ffd600;">${val}</td>`;
+                else if (typeof val === 'string' && val.includes('❌')) html += `<td style="color: #ff5252;">${val}</td>`;
+                else html += `<td>${escapeHtml(val)}</td>`;
+            });
+            html += '</tr>';
+        });
+        html += '</tbody></table>';
+    });
+    content.innerHTML = html;
+}
+
+function formatScanner(rows, columns) {
+    if (!rows || rows.length === 0) return "Nenhum ativo encontrado.";
+    return rows.map(row => {
+        const pares = [];
+        columns.forEach(col => {
+            let val = row[col.key];
+            let valStr = "";
+            if (val === null || val === undefined || (typeof val === 'number' && isNaN(val))) valStr = "N/A";
+            else if (typeof val === 'number') valStr = (val % 1 !== 0) ? val.toFixed(2) : val.toString();
+            else valStr = String(val);
+            pares.push(`${col.label}: ${valStr}`);
+        });
+        return pares.join(" | ");
+    }).join("\n");
+}
+
+function copyPrompt() {
+    const ids = currentScanners.map(s => s.id).filter(id => scannerResults[id] && scannerResults[id].rows.length);
+    if (ids.length === 0) return;
+    const copyBtn = document.getElementById('btn-copy-prompt');
+
+    const symbolsInput = document.getElementById('custom-symbols-input')?.value.trim();
+    const filtro = symbolsInput ? `\n\n**Filtro de Ativos Aplicado:** ${symbolsInput}` : '';
+
+    let corpo = '';
+    ids.forEach(id => {
+        const r = scannerResults[id];
+        corpo += `\n\n### ${r.name} (${r.rows.length} ativos)\n` + formatScanner(r.rows, r.columns);
+    });
+
+    const promptTrader = `### Você é um trader profissional de Intraday e Swing curto prazo no mercado brasileiro (B3).
+
+**Regras de Análise (obedeça rigorosamente):**
+- Timeframe principal: 1 hora
+- Timeframe auxiliar: 30 minutos
+- Estilo: Intraday ou Swing de 1 a 3 dias (posso carregar overnight)
+- Risco máximo por trade: 1% do capital
+- Risk:Reward mínimo obrigatório: **1:2**
+- **Só liste setups de COMPRA válidos** (nada de venda ou short)
+- Só recomende entrada se Score ≥ 65 e haja boa confluência entre 1h e 30m
+
+**Responda EXATAMENTE neste formato:**
+
+### ANÁLISE FINAL
+
+**Setups de Compra Válidos (em ordem de prioridade):**
+
+**XXXX** → **Score: XX/100**
+**Entrada Sugerida:** R$ XXXX
+**Stop Loss:** R$ XXXX (-X.X%)
+**Target 1:** R$ XXXX (+X.X% | R:R 1:2)
+**Target 2:** R$ XXXX (+X.X% | R:R 1:3)
+**Confluência 1h + 30m:**
+**Forças principais:**
+**Fraquezas / Riscos:**
+**Estratégia sugerida:**
+
+**Setups para Monitorar (sem confluência suficiente):**
+XXXX → Motivo breve
+
+**Resumo Geral:**
+**Viés do mercado hoje:**
+**Nível de risco do dia (Baixo / Médio / Alto):**
+**Melhor horário para entrada:**
+
+Seja objetivo, direto e conservador. Se não houver setups bons, diga claramente "Não há setups de compra válidos no momento."
+
+---
+
+**Dados do Scanner (consolidado de todos os scanners):**${filtro}
+`;
+
+    const textToCopy = promptTrader + corpo;
+
+    navigator.clipboard.writeText(textToCopy).then(() => {
+        const originalText = copyBtn.textContent;
+        copyBtn.textContent = '✅ Copiado!';
+        copyBtn.style.background = 'linear-gradient(135deg, #059669, #047857)';
+        copyBtn.style.color = '#fff';
+        setTimeout(() => {
+            copyBtn.textContent = originalText;
+            copyBtn.style.background = '';
+            copyBtn.style.color = '';
+        }, 2000);
+    }).catch(err => {
+        console.error('Erro ao copiar para clipboard:', err);
+        alert('Erro ao copiar automaticamente.');
+    });
+}
+
 function renderTable(container, columns, rows) {
     if (!rows.length) {
         container.innerHTML = "<p>Sem dados.</p>";
@@ -523,12 +666,73 @@ async function loadFill() {
 async function loadFailures() {
     const res = await fetch(`${BASE}/api/failures`);
     const data = await res.json();
-    if(data.length > 0) {
-        const cols = Object.keys(data[0]).map(k => ({key: k, label: k}));
-        renderTable(document.getElementById('table-failures'), cols, data);
-    } else {
-        document.getElementById('table-failures').innerHTML = '<p>Nenhuma falha registrada.</p>';
+    const container = document.getElementById('table-failures');
+    if(!data.length) {
+        container.innerHTML = '<p>Nenhuma falha registrada.</p>';
+        return;
     }
+
+    // Símbolos delistados são marcados pelo backend (interval === "(delistado)").
+    const delistedSymbols = new Set(
+        data.filter(r => r.interval === '(delistado)').map(r => r.symbol)
+    );
+    // Renderiza uma única linha de ação por símbolo (pode ter várias falhas).
+    const seen = new Set();
+    const renderRows = [];
+    data.forEach(row => {
+        if (seen.has(row.symbol)) return;
+        seen.add(row.symbol);
+        renderRows.push(row);
+    });
+
+    let html = '<table><thead><tr>';
+    html += '<th>Símbolo</th><th>Intervalo</th><th>Tentativas</th><th>Erro</th><th>Última tentativa</th><th>Ação</th>';
+    html += '</tr></thead><tbody>';
+
+    renderRows.forEach(row => {
+        const delisted = delistedSymbols.has(row.symbol);
+        const iv = delisted ? '(delistado)' : escapeHtml(row.interval);
+        html += '<tr>';
+        html += `<td>${escapeHtml(row.symbol)}</td>`;
+        html += `<td>${iv}</td>`;
+        html += `<td>${row.attempts ?? ''}</td>`;
+        html += `<td>${escapeHtml((row.last_error || '').slice(0, 200))}</td>`;
+        html += `<td>${escapeHtml(row.last_attempt_at || '')}</td>`;
+        if (delisted) {
+            html += `<td><button class="btn-delist" data-reinstate="${escapeHtml(row.symbol)}" style="cursor:pointer;padding:4px 10px;background:#2e7d32;color:#fff;border:1px solid #555;border-radius:4px;">♻️ Reincluir</button></td>`;
+        } else {
+            html += `<td><button class="btn-delist" data-delist="${escapeHtml(row.symbol)}" style="cursor:pointer;padding:4px 10px;background:#b71c1c;color:#fff;border:1px solid #555;border-radius:4px;">🚫 Delistar</button></td>`;
+        }
+        html += '</tr>';
+    });
+
+    html += '</tbody></table>';
+    container.innerHTML = html;
+
+    container.querySelectorAll('.btn-delist').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            const sym = btn.dataset.delist || btn.dataset.reinstate;
+            const action = btn.dataset.delist ? 'delist' : 'reinstate';
+            const verb = action === 'delist' ? 'delistar (ocultar logicamente)' : 'reincluir';
+            if (!confirm(`Deseja ${verb} o ativo ${sym}?\n\nOperação lógica e reversível (blacklist no banco).`)) return;
+            btn.disabled = true;
+            try {
+                const r = await fetch(`${BASE}/api/${action}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ symbol: sym }),
+                });
+                if (!r.ok) throw new Error('http ' + r.status);
+                await loadFailures();
+                updateStatus();
+            } catch (e) {
+                console.error(`Erro ao ${action} ${sym}`, e);
+                alert(`Erro ao ${verb} ${sym}. Tente novamente.`);
+            } finally {
+                btn.disabled = false;
+            }
+        });
+    });
 }
 
 function escapeHtml(s) {

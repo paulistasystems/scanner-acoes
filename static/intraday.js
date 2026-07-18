@@ -4,6 +4,7 @@ const BASE = location.pathname.replace(/\/day$/, '').replace(/\/$/, '');
 const WARM_INTERVALS = "1d,30m,15m";
 
 let intradayScanners = [];
+const scannerResults = {}; // id -> { name, columns, rows }
 
 async function init() {
     setupEventListeners();
@@ -203,11 +204,15 @@ async function runSingle(scanner) {
         if (!data.rows || data.rows.length === 0) {
             setBadge(panel, 'empty', '— vazio');
             body.innerHTML = '<p class="placeholder">Nenhum ativo encontrado.</p>';
+            delete scannerResults[scanner.id];
+            updateSummary();
             return;
         }
 
         setBadge(panel, 'done', `✅ ${data.rows.length} ativos`);
         renderTable(body, data.columns, data.rows);
+        scannerResults[scanner.id] = { name: scanner.name, columns: data.columns, rows: data.rows };
+        updateSummary();
     } catch (e) {
         setBadge(panel, 'error', '❌ rede');
         body.innerHTML = `<p style="color:red">Erro de rede: ${escapeHtml(e.message)}</p>`;
@@ -218,6 +223,7 @@ function setupEventListeners() {
     document.getElementById('btn-refresh').addEventListener('click', refreshDB);
     document.getElementById('btn-warm').addEventListener('click', () => triggerWarm());
     document.getElementById('btn-run-all').addEventListener('click', startup);
+    document.getElementById('btn-copy-prompt').addEventListener('click', copyPrompt);
 }
 
 function setRunAllButton(enabled) {
@@ -325,6 +331,135 @@ async function loadFill() {
     } else {
         document.getElementById('table-fill').innerHTML = '<p>Banco de dados vazio ou sem estado.</p>';
     }
+}
+
+function updateSummary() {
+    const section = document.getElementById('summary-section');
+    const content = document.getElementById('summary-content');
+    const copyBtn = document.getElementById('btn-copy-prompt');
+    if (!section || !content) return;
+
+    const ids = intradayScanners.map(s => s.id).filter(id => scannerResults[id] && scannerResults[id].rows.length);
+    if (ids.length === 0) {
+        section.style.display = 'none';
+        if (copyBtn) copyBtn.style.display = 'none';
+        content.innerHTML = '';
+        return;
+    }
+
+    section.style.display = 'block';
+    if (copyBtn) copyBtn.style.display = 'inline-block';
+
+    let html = '';
+    ids.forEach(id => {
+        const r = scannerResults[id];
+        html += `<h3 style="margin: 12px 0 6px; color: #66b3ff;">${escapeHtml(r.name)} (${r.rows.length})</h3>`;
+        html += '<table><thead><tr>';
+        r.columns.forEach(c => { html += `<th>${escapeHtml(c.label)}</th>`; });
+        html += '</tr></thead><tbody>';
+        r.rows.forEach(row => {
+            html += '<tr>';
+            r.columns.forEach(c => {
+                let val = row[c.key];
+                if (val === null || val === undefined) val = "";
+                else if (typeof val === 'number') val = (val % 1 !== 0) ? val.toFixed(2) : val;
+                if (val === '✅') html += `<td style="color: #00c853;">${val}</td>`;
+                else if (val === '❌') html += `<td style="color: #ff5252;">${val}</td>`;
+                else if (typeof val === 'string' && val.includes('✅')) html += `<td style="color: #00c853;">${val}</td>`;
+                else if (typeof val === 'string' && val.includes('⚠️')) html += `<td style="color: #ffd600;">${val}</td>`;
+                else if (typeof val === 'string' && val.includes('❌')) html += `<td style="color: #ff5252;">${val}</td>`;
+                else html += `<td>${escapeHtml(val)}</td>`;
+            });
+            html += '</tr>';
+        });
+        html += '</tbody></table>';
+    });
+    content.innerHTML = html;
+}
+
+function formatScanner(rows, columns) {
+    if (!rows || rows.length === 0) return "Nenhum ativo encontrado.";
+    return rows.map(row => {
+        const pares = [];
+        columns.forEach(col => {
+            let val = row[col.key];
+            let valStr = "";
+            if (val === null || val === undefined || (typeof val === 'number' && isNaN(val))) valStr = "N/A";
+            else if (typeof val === 'number') valStr = (val % 1 !== 0) ? val.toFixed(2) : val.toString();
+            else valStr = String(val);
+            pares.push(`${col.label}: ${valStr}`);
+        });
+        return pares.join(" | ");
+    }).join("\n");
+}
+
+function copyPrompt() {
+    const ids = intradayScanners.map(s => s.id).filter(id => scannerResults[id] && scannerResults[id].rows.length);
+    if (ids.length === 0) return;
+    const copyBtn = document.getElementById('btn-copy-prompt');
+
+    const symbolsInput = document.getElementById('custom-symbols-input')?.value.trim();
+    const filtro = symbolsInput ? `\n\n**Filtro de Ativos Aplicado:** ${symbolsInput}` : '';
+
+    let corpo = '';
+    ids.forEach(id => {
+        const r = scannerResults[id];
+        corpo += `\n\n### ${r.name} (${r.rows.length} ativos)\n` + formatScanner(r.rows, r.columns);
+    });
+
+    const promptTrader = `### Você é um trader profissional de Intraday e Abertura no mercado brasileiro (B3).
+
+**Regras de Análise (obedeça rigorosamente):**
+- Timeframe principal: 15 minutos (abertura) / 30 minutos (confluência)
+- Estilo: Intraday (day trade), sem carregar overnight
+- Risco máximo por trade: 1% do capital
+- Risk:Reward mínimo obrigatório: **1:2**
+- **Só liste setups de COMPRA válidos** (nada de venda ou short)
+- Considere os horários de abertura (10:00-10:30) e confluência 15m/30m
+
+**Responda EXATAMENTE neste formato:**
+
+### ANÁLISE FINAL (INTRADAY)
+
+**Setups de Compra Válidos (em ordem de prioridade):**
+
+**XXXX** → **Score: XX/100**
+**Entrada Sugerida:** R$ XXXX
+**Stop Loss:** R$ XXXX (-X.X%)
+**Target 1:** R$ XXXX (+X.X% | R:R 1:2)
+**Target 2:** R$ XXXX (+X.X% | R:R 1:3)
+**Confluência 15m + 30m:**
+**Forças principais:**
+**Fraquezas / Riscos:**
+**Estratégia sugerida (horário de entrada):**
+
+**Resumo Geral:**
+**Viés do mercado hoje (abertura):**
+**Nível de risco do dia (Baixo / Médio / Alto):**
+
+Seja objetivo, direto e conservador. Se não houver setups bons, diga claramente "Não há setups de compra válidos no momento."
+
+---
+
+**Dados do Scanner (consolidado Intraday / Abertura):**${filtro}
+`;
+
+    const textToCopy = promptTrader + corpo;
+
+    navigator.clipboard.writeText(textToCopy).then(() => {
+        const originalText = copyBtn.textContent;
+        copyBtn.textContent = '✅ Copiado!';
+        copyBtn.style.background = 'linear-gradient(135deg, #059669, #047857)';
+        copyBtn.style.color = '#fff';
+        setTimeout(() => {
+            copyBtn.textContent = originalText;
+            copyBtn.style.background = '';
+            copyBtn.style.color = '';
+        }, 2000);
+    }).catch(err => {
+        console.error('Erro ao copiar para clipboard:', err);
+        alert('Erro ao copiar automaticamente.');
+    });
 }
 
 function renderTable(container, columns, rows) {

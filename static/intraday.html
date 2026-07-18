@@ -49,6 +49,20 @@
             </div>
         </section>
 
+        <!-- Resumo dos Indicadores (agrega os scanners Intraday / Abertura) -->
+        <section class="results-section" id="summary-section" style="display: none;">
+            <h2>Resumo dos Indicadores <span class="grid-hint">(consolidado dos scanners Intraday / Abertura)</span></h2>
+            <div class="scanner-panel">
+                <header>
+                    <span class="panel-name">📋 Consolidado para Análise</span>
+                    <div class="panel-actions">
+                        <button id="btn-copy-prompt" class="btn-copy-analysis" style="display: none;">📋 Copiar Prompt</button>
+                    </div>
+                </header>
+                <div class="summary-content" id="summary-content" style="padding: 10px;"></div>
+            </div>
+        </section>
+
         <!-- Warming Status -->
         <div id="warming-status" class="warming-status" style="display: none;">
             <p>🔥 Baixando dados para o cache local (<span id="warm-pct">0</span>%)</p>

@@ -708,6 +708,70 @@ def clear_blacklist():
         conn.commit()
 
 
+def delist_symbol(symbol):
+    """Delisting LÓGICO e reversível: adiciona o símbolo à blacklist (que já
+    bloqueia aquisição/análise em data_ready/blacklist_missing) e limpa o
+    fill_state dele. NÃO remove fetch_failures — assim a linha continua aparecendo
+    na aba Falhas (com botão Reincluir). É uma operação de banco (blacklist),
+    não física — dá para desfazer via reinstate_symbol."""
+    _ensure_schema()
+    now_str = _now_brt().isoformat()
+    sym = (symbol or "").strip().upper()
+    if not sym:
+        return False
+    with _lock:
+        conn = _connect()
+        conn.execute(
+            "INSERT OR IGNORE INTO blacklist (symbol, added_at) VALUES (?, ?)",
+            (sym, now_str),
+        )
+        conn.execute("DELETE FROM fill_state WHERE symbol=?", (sym,))
+        conn.commit()
+    return True
+
+
+def list_delisted():
+    """Símbolos atualmente delistados (na blacklist), em DataFrame, para exibir
+    na aba Falhas mesmo quando não há linha correspondente em fetch_failures."""
+    _ensure_schema()
+    with _lock:
+        rows = _connect().execute(
+            "SELECT symbol, added_at FROM blacklist ORDER BY symbol"
+        ).fetchall()
+    if not rows:
+        return pd.DataFrame()
+    return pd.DataFrame(rows, columns=["symbol", "added_at"])
+
+
+def reinstate_symbol(symbol):
+    """Desfaz o delisting lógico: remove o símbolo da blacklist (e do
+    fetch_failures, se houver) para que volte a ser considerado pelo warm/análise.
+    Operação de banco, inversa de delist_symbol."""
+    _ensure_schema()
+    sym = (symbol or "").strip().upper()
+    if not sym:
+        return False
+    with _lock:
+        conn = _connect()
+        conn.execute("DELETE FROM blacklist WHERE symbol=?", (sym,))
+        conn.execute("DELETE FROM fetch_failures WHERE symbol=?", (sym,))
+        conn.commit()
+    return True
+
+
+def is_delisted(symbol):
+    """True se o símbolo está na blacklist (delistado logicamente)."""
+    _ensure_schema()
+    sym = (symbol or "").strip().upper()
+    if not sym:
+        return False
+    with _lock:
+        row = _connect().execute(
+            "SELECT 1 FROM blacklist WHERE symbol=?", (sym,)
+        ).fetchone()
+    return row is not None
+
+
 def blacklist_missing(symbols=None, intervals=None):
     from symbols_fallback import ATIVOS_B3_AMPLIADO
     base_symbols = list(symbols if symbols is not None else ATIVOS_B3_AMPLIADO)

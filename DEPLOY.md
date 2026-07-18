@@ -4,8 +4,7 @@ Procedimento de deploy da versão web (Flask/WSGI + HTML/JS vanilla) para o
 servidor **Phusion Passenger (DirectAdmin)** em `paulista.dev/scanner`.
 
 - **Local**: este repo, branch `master`, Python 3.9 (`venv39/`).
-- **Remoto**: app root `/home/paulista/scanner` ⇒ caminho FTP `/scanner`
-  (relativo ao home do usuário `paulista`). Servido em `https://paulista.dev/scanner`.
+- **Remoto**: app root `/home/paulista/scanner` ⇒ caminho FTP `/scanner`. 
 - **Virtualenv remoto**: `/home/paulista/virtualenv/scanner/3.9/` (Python 3.9.19).
 - **Entrada Passenger**: [`passenger_wsgi.py`](passenger_wsgi.py) → `application = app`
   (importa `app` de [`app.py`](app.py)).
@@ -88,29 +87,6 @@ Hash-based comparison para evitar uploads desnecessários:
 
 ---
 
-## Sincronizar o banco SQLite (opcional)
-
-O `scanner.db` **não é versionado**. Para preservar dados aquecidos:
-
-### Download remoto → local
-
-```bash
-set -a; . ./.env; set +a
-curl -s --user "$FTP_USER:$FTP_PASS" \
-  "ftp://$FTP_HOST/scanner/scanner.db" -o scanner.db
-ls -lh scanner.db
-```
-
-### Upload local → remoto (pré-aquecer servidor a partir do warm local)
-
-```bash
-set -a; . ./.env; set +a
-curl -s --user "$FTP_USER:$FTP_PASS" \
-  -T scanner.db "ftp://$FTP_HOST/scanner/scanner.db"
-```
-
----
-
 ## Restart manual do Passenger
 
 O `deploy.sh` já inclui `tmp/restart.txt` no stage — o Passenger recarrega
@@ -122,42 +98,6 @@ echo "$(date)" > /tmp/restart.txt
 curl -s --user "$FTP_USER:$FTP_PASS" \
   -T /tmp/restart.txt "ftp://$FTP_HOST/scanner/tmp/restart.txt"
 ```
-
----
-
-## Aquecer o banco (pós-deploy com DB zerado)
-
-```bash
-# Dispara o warm em background
-curl -s -X POST https://paulista.dev/scanner/api/warm \
-  -H 'Content-Type: application/json' \
-  -d '{"intervals":"1d,1h,30m"}' | python3 -m json.tool
-
-# Acompanha o progresso (poll até "running": false)
-curl -s https://paulista.dev/scanner/api/status | python3 -m json.tool
-```
-
-> Universal = 220+ ativos × intervalos. Espere 5–15 min.
-> **Dev local (Docker/OrbStack)** — validar warm e scanners **antes** do deploy:
->
-> ```bash
-> ./run_docker.sh up
-> ./run_docker.sh warm              # só volume local
-> open http://localhost:8080/scanner/
-> ```
->
-> O `deploy.sh` sobe **código**, não `scanner.db`. Warm em produção: `POST /api/warm` ou cron no servidor.
-
----
-
-## Limpeza / inspeção remota (toolkit `~/scripts`)
-
-| Tarefa | Comando |
-|---|---|
-| Uso de disco do `/scanner` | `~/scripts/ftp_du.sh /scanner` |
-| Listar conteúdo de `/scanner` | `~/scripts/ftp_delete_dir.sh --list /scanner` |
-| Deletar `__pycache__` remoto | `~/scripts/ftp_delete_dir.sh /scanner/__pycache__` |
-| Download completo do servidor → `~/asura` | `~/scripts/ftp_mirror.sh` |
 
 ---
 
@@ -175,7 +115,6 @@ curl -s https://paulista.dev/scanner/api/status | python3 -m json.tool
 ## Notas de segurança
 
 - `.env` guarda a senha FTP — nunca commitar (`.gitignore` já cobre).
-- O toolkit `~/scripts/ftp_*.sh` embute credenciais no topo — `chmod 700` em máquina compartilhada.
 
 ---
 
@@ -187,4 +126,3 @@ Este branch é um **paralelo** ao `master`:
 - **Deploy automático** via `build.sh` + `deploy.sh`
 - **Sem pandas_ta/numba** (indicadores reimplementados em pandas puro)
 
-**NUNCA merge este branch de volta no `master`** — mantenha isolado.

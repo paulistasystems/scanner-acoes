@@ -368,9 +368,57 @@ def api_clear_blacklist():
     # os simbolos agora aceitos, se houver necessidade
     return jsonify({"success": True})
 
+@app.route('/api/delist', methods=['POST'])
+def api_delist():
+    """Delisting lógico e reversível (ver data_layer.delist_symbol)."""
+    req = request.get_json() or {}
+    symbols = req.get('symbols') or ([] if 'symbol' not in req else [req['symbol']])
+    if isinstance(symbols, str):
+        symbols = [symbols]
+    if not symbols:
+        return jsonify({"success": False, "error": "Nenhum símbolo informado"}), 400
+    done = []
+    for s in symbols:
+        if data_layer.delist_symbol(s):
+            done.append(s)
+    return jsonify({"success": True, "delisted": done})
+
+@app.route('/api/reinstate', methods=['POST'])
+def api_reinstate():
+    """Desfaz o delisting lógico (ver data_layer.reinstate_symbol)."""
+    req = request.get_json() or {}
+    symbols = req.get('symbols') or ([] if 'symbol' not in req else [req['symbol']])
+    if isinstance(symbols, str):
+        symbols = [symbols]
+    if not symbols:
+        return jsonify({"success": False, "error": "Nenhum símbolo informado"}), 400
+    done = []
+    for s in symbols:
+        if data_layer.reinstate_symbol(s):
+            done.append(s)
+    return jsonify({"success": True, "reinstated": done})
+
 @app.route('/api/failures')
 def api_failures():
     df = data_layer.list_failures()
+    # Mescla símbolos delistados que não possuem linha em fetch_failures, para que
+    # continuem aparecendo na aba Falhas com o botão de Reincluir.
+    try:
+        df_del = data_layer.list_delisted()
+    except Exception:
+        df_del = None
+    if df_del is not None and not df_del.empty:
+        delisted = set(df_del["symbol"].tolist())
+        have = set(df["symbol"].tolist()) if not df.empty else set()
+        extra = [s for s in delisted if s not in have]
+        if extra:
+            extra_rows = [{"symbol": s, "interval": "(delistado)", "fail_count": None,
+                           "attempts": None, "last_error": "Ativo ocultado (delistado logicamente).",
+                           "last_attempt_at": None} for s in extra]
+            if df.empty:
+                df = pd.DataFrame(extra_rows)
+            else:
+                df = pd.concat([df, pd.DataFrame(extra_rows)], ignore_index=True)
     if df.empty: return jsonify([])
     return jsonify(df.to_dict(orient='records'))
 
