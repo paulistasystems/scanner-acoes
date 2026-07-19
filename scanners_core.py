@@ -1390,3 +1390,190 @@ def monitoramento_intraday(ativos):
             continue
 
     return pd.DataFrame(resultados)
+
+
+# === ESTRATÉGIA INTRADAY (1H + 30M, janela 10:00–13:00) ===
+
+# Lista própria da estratégia (independente do universo ampliado). Sobrescrita via
+# parâmetro `symbols` do frontend (campo de ativos específicos na página /day).
+ESTRATEGIA_B3_SYMBOLS = [
+    'AAPL34.SA', 'PFIZ34.SA', 'ABBV34.SA',
+    'BBDC4.SA', 'MRCK34.SA', 'DIVO11.SA', 'ENEV3.SA',
+]
+
+MIN_SCORE_ESTRATEGIA = 65
+MIN_RR_ESTRATEGIA = 2
+
+def _filtrar_janela_manha(df):
+    """Filtra candles entre 10:00 e 13:00 (horário B3). Tolerante a índice tz-naive
+    ou tz-aware: normaliza para America/Sao_Paulo antes de cortar a janela."""
+    if df is None or df.empty:
+        return df
+    idx = df.index
+    try:
+        if getattr(idx, 'tz', None) is not None:
+            idx_local = idx.tz_convert('America/Sao_Paulo')
+        else:
+            # yfinance intradiário vem em UTC; converter de UTC para B3 (UTC-3)
+            idx_local = idx.tz_localize('UTC').tz_convert('America/Sao_Paulo')
+        mask = (idx_local.hour >= 10) & (idx_local.hour < 13)
+        return df[mask]
+    except Exception:
+        return df
+
+def _score_estrategia(df):
+    """Score 0-100 (RSI + ADX + Volume + Tendência), transparente e sem pandas_ta."""
+    if df is None or len(df) < 20:
+        return 0
+    latest = df.iloc[-1]
+    score = 0
+
+    rsi = safe_float(df['RSI'].iloc[-1]) if 'RSI' in df.columns else 50
+    if rsi > 55:
+        score += 25
+    elif rsi > 50:
+        score += 15
+
+    adx = safe_float(df['ADX_14'].iloc[-1]) if 'ADX_14' in df.columns else 20
+    plus_di = safe_float(df['DMP_14'].iloc[-1]) if 'DMP_14' in df.columns else 20
+    minus_di = safe_float(df['DMN_14'].iloc[-1]) if 'DMN_14' in df.columns else 20
+
+    if adx > 25:
+        score += 25
+    elif adx > 20:
+        score += 15
+
+    if plus_di > minus_di:
+        score += 20
+
+    vol_ratio = safe_float(latest['Vol_Ratio']) if 'Vol_Ratio' in df.columns else 1.0
+    if vol_ratio > 2:
+        score += 20
+    elif vol_ratio > 1.5:
+        score += 10
+
+    ma20 = safe_float(df['Close'].rolling(20).mean().iloc[-1])
+    if ma20 and safe_float(latest['Close']) > ma20:
+        score += 10
+
+    return min(score, 100)
+
+def estrategia_b3_intraday(ativos=None):
+    """
+    Estratégia Intraday de COMPRA (1H + 30M) com foco na janela 10:00–13:00.
+    - Score por timeframe (RSI + ADX + Volume + Tendência) → Score Total ponderado.
+    - Confluência exigida em 1H + 30M (ADX>22 e +DI>-DI).
+    - Sinal de COMPRA apenas se Score Total >= 65 E confluência; calcula Stop/Targets
+      conservadores (ATR + mínima recente) com R:R mínimo 1:2.
+    Usa o banco (DB) já populado — não baixa do Yahoo.
+    """
+    if ativos is None:
+        ativos = ESTRATEGIA_B3_SYMBOLS
+
+    resultados = []
+    _prewarm_com_progresso(ativos, ['1d', '1h', '30m'])
+
+    for symbol in ativos:
+        try:
+            df_daily = baixar_dados(symbol, '1d', '6mo')
+            if df_daily is None or len(df_daily) < 20:
+                continue
+
+            df_1h = baixar_dados(symbol, '1h', '45d')
+            df_30m = baixar_dados(symbol, '30m', '45d')
+            if df_1h is None or df_1h.empty or df_30m is None or df_30m.empty:
+                continue
+
+            # Indicadores 1H
+            df_1h = df_1h.copy()
+            df_1h['RSI'] = ta.rsi(df_1h['Close'], length=14)
+            adx_1h = ta.adx(df_1h['High'], df_1h['Low'], df_1h['Close'], length=14)
+            df_1h = pd.concat([df_1h, adx_1h], axis=1)
+            df_1h['Vol_Avg'] = df_1h['Volume'].rolling(20).mean()
+            df_1h['Vol_Ratio'] = df_1h['Volume'] / df_1h['Vol_Avg']
+
+            # Indicadores 30M
+            df_30m = df_30m.copy()
+            df_30m['RSI'] = ta.rsi(df_30m['Close'], length=14)
+            adx_30m = ta.adx(df_30m['High'], df_30m['Low'], df_30m['Close'], length=14)
+            df_30m = pd.concat([df_30m, adx_30m], axis=1)
+            df_30m['Vol_Avg'] = df_30m['Volume'].rolling(20).mean()
+            df_30m['Vol_Ratio'] = df_30m['Volume'] / df_30m['Vol_Avg']
+
+            # Diário (contexto de tendência)
+            df_daily = df_daily.copy()
+            df_daily['RSI'] = ta.rsi(df_daily['Close'], length=14)
+            adx_daily = ta.adx(df_daily['High'], df_daily['Low'], df_daily['Close'], length=14)
+            df_daily = pd.concat([df_daily, adx_daily], axis=1)
+
+            # Janela 10:00–13:00 (usa a manhã se houver dados nela)
+            df_1h_manha = _filtrar_janela_manha(df_1h)
+            df_30m_manha = _filtrar_janela_manha(df_30m)
+
+            base_1h = df_1h_manha if not df_1h_manha.empty else df_1h
+            base_30m = df_30m_manha if not df_30m_manha.empty else df_30m
+
+            if base_1h.empty or base_30m.empty or len(base_1h) < 20 or len(base_30m) < 20:
+                continue
+
+            current_price = safe_float(base_1h['Close'].iloc[-1])
+            if current_price <= 0:
+                continue
+
+            score_1h = _score_estrategia(base_1h)
+            score_30m = _score_estrategia(base_30m)
+            score_daily = _score_estrategia(df_daily)
+
+            total_score = int((score_1h * 0.45 + score_30m * 0.35 + score_daily * 0.20))
+
+            latest_1h = base_1h.iloc[-1]
+            adx_1h_v = safe_float(latest_1h['ADX_14'])
+            plus_di_1h = safe_float(latest_1h['DMP_14'])
+            minus_di_1h = safe_float(latest_1h['DMN_14'])
+            adx_30m_v = safe_float(base_30m.iloc[-1]['ADX_14'])
+
+            confluence = (
+                score_1h >= 60 and score_30m >= 55 and
+                adx_1h_v > 22 and plus_di_1h > minus_di_1h
+            )
+
+            setup_valido = total_score >= MIN_SCORE_ESTRATEGIA and confluence
+
+            entry = current_price
+            atr = safe_float(ta.atr(df_1h['High'], df_1h['Low'], df_1h['Close'], length=14).iloc[-1])
+            if atr <= 0 or pd.isna(atr):
+                atr = entry * 0.02
+            recent_low = safe_float(df_1h['Low'].iloc[-5:].min())
+            stop_loss = min(recent_low * 0.985, entry - (atr * 1.2))
+            risco = entry - stop_loss
+            if risco <= 0:
+                risco = entry * 0.01
+            target1 = entry + (risco * 2)
+            target2 = entry + (risco * 3)
+            rr1 = round((target1 - entry) / risco, 2)
+            rr2 = round((target2 - entry) / risco, 2)
+
+            resultados.append({
+                'Ativo': symbol.replace('.SA', ''),
+                'Preço': round(current_price, 2),
+                'Score 1H': score_1h,
+                'Score 30M': score_30m,
+                'Score Diário': score_daily,
+                'Score Total': total_score,
+                'Confluência': '✅ FORTE' if confluence else '⚠️ FRACA',
+                'Setup': '✅ COMPRA' if setup_valido else '—',
+                'RSI 1H': round(safe_float(latest_1h['RSI_14']) if 'RSI_14' in latest_1h else safe_float(latest_1h['RSI']), 1),
+                'ADX 1H': round(adx_1h_v, 1),
+                'RSI 30M': round(safe_float(base_30m.iloc[-1]['RSI_14']) if 'RSI_14' in base_30m.columns else safe_float(base_30m.iloc[-1]['RSI']), 1),
+                'ADX 30M': round(adx_30m_v, 1),
+                'Vol Ratio 1H': round(safe_float(latest_1h['Vol_Ratio']), 2),
+                'Stop': round(stop_loss, 2),
+                'Target 1 (R:2)': round(target1, 2),
+                'Target 2 (R:3)': round(target2, 2),
+                'R:R 1': rr1,
+                'R:R 2': rr2,
+            })
+        except Exception:
+            continue
+
+    return pd.DataFrame(resultados).sort_values('Score Total', ascending=False)

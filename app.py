@@ -120,6 +120,13 @@ SCANNERS_REGISTRY = {
         "uses_profile": False,
         "uses_symbols": True,
         "group": "intraday"
+    },
+    "estrategia_b3_intraday": {
+        "name": "Estratégia B3 (Segunda) - 1H+30M 10-13h",
+        "func": scanners_core.estrategia_b3_intraday,
+        "uses_profile": False,
+        "uses_symbols": True,
+        "group": "intraday"
     }
 }
 
@@ -245,6 +252,13 @@ def api_scan():
                 df = s["func"](ativos, min_ratio)
             elif scanner_id == "monitoramento_intraday":
                 df = s["func"](ativos)
+            elif scanner_id == "estrategia_b3_intraday":
+                # Usa a lista própria da estratégia quando nenhum símbolo
+                # específico foi informado no frontend (campo de ativos).
+                if custom_symbols_str and s.get("uses_symbols"):
+                    df = s["func"](ativos)
+                else:
+                    df = s["func"](None)
             else:
                 df = s["func"](ativos)
                 
