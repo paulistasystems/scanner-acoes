@@ -159,3 +159,10 @@ that throttled/truncated Yahoo responses used to cause.
   por conta própria. Checagens só-leitura (`curl /api/status`, `/api/bars`, baixar
   `stderr.log`, listar diretórios via FTP) seguem liberadas.
 - **Desenvolvimento e Branches:** Trabalhe e commite diretamente na branch `master` (branch padrão) deste repositório sem a necessidade de criar branches temporárias/intermediárias, a menos que o usuário instrua explicitamente o contrário.
+- **Push via `gh`:** o git remoto é HTTPS e não tem credencial armazenada no shell. Para
+  fazer push, use o `gh` (já autenticado como `paulistasystems`): `gh auth setup-git`
+  seguido de `git push origin master`. Não tente push direto por HTTPS sem token nem por
+  SSH (host-key do GitHub não validado neste ambiente).
+- **Scripts que parseiam seus próprios argumentos:** ao receber um parâmetro desconhecido,
+  devem sair com código não-zero (ex.: `exit 1`) e exibir o `usage`/ajuda — nunca ignorar
+  silenciosamente o argumento inválido. (`deploy.sh` e `remote_logs.sh` seguem esse padrão.)
