@@ -554,14 +554,36 @@ def get_bars(symbol, interval, period):
 
     days = _PERIOD_DAYS.get(period)
     if days:
-        cutoff = now - timedelta(days=days)
+        # Âncora o cutoff no timestamp mais recente disponível no banco para este
+        # (symbol, interval), e NÃO no relógio vivo do servidor (`now`). Isso torna
+        # a janela determinística e idêntica entre o servidor local e o remoto,
+        # que de outro modo fatiariam janelas de calendário diferentes conforme o
+        # relógio de cada máquina avança (causa raiz dos resultados divergentes).
+        anchor = _db_max_ts(df, now)
+        cutoff = anchor - timedelta(days=days)
         # yfinance entrega o índice diário tz-naive (meia-noite) e o intradiário
-        # tz-aware; `now` é sempre tz-aware. Alinha o cutoff à awareness do índice
-        # para a comparação funcionar nos dois casos (sem deslocar timestamps).
+        # tz-aware; alinha o cutoff à awareness do índice para a comparação
+        # funcionar nos dois casos (sem deslocar timestamps).
         if df.index.tz is None:
             cutoff = cutoff.replace(tzinfo=None)
         df = df[df.index >= cutoff]
     return df
+
+
+def _db_max_ts(df, now):
+    """Maior timestamp presente no DataFrame, ou `now` se vazio.
+
+    Preserva a awareness (tz) do índice original: se o índice for tz-naive,
+    devolve um instantâneo naive de `now`; se for tz-aware, devolve `now` c/tz.
+    """
+    if df is None or df.empty:
+        return now
+    last = df.index.max()
+    if last.tzinfo is None and now.tzinfo is not None:
+        return now.replace(tzinfo=None)
+    if last.tzinfo is not None and now.tzinfo is None:
+        return now.replace(tzinfo=last.tzinfo)
+    return now
 
 
 # ----------------------------- Warm state (compartilhado entre processos) -----------------------------

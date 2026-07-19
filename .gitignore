@@ -29,6 +29,8 @@ tools/_*.json
 # Logs/transcrições de sessão (artefatos de runtime) — requirements.txt segue versionado
 *.txt
 !requirements.txt
+typescript
+nohup.out
 
 # Secrets do Supabase (gestão dinâmica de símbolos) — NUNCA commitar
 .env
