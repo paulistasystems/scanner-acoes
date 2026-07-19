@@ -106,6 +106,7 @@ case "$cmd" in
     echo "  warm 1h: ./run_docker.sh warm 1h"
     echo "  logs:    ./run_docker.sh logs"
     echo "  down:    ./run_docker.sh down"
+    echo "  reset-db: apaga o scanner.db local do volume Docker (dev only)"
     ;;
   warm)
     # prewarm só no volume compose
@@ -131,9 +132,31 @@ case "$cmd" in
   export-db)
     exec ./db_sync.sh export
     ;;
+  reset-db)
+    # Apaga o scanner.db local do volume Docker (desenvolvimento apenas).
+    # Para a stack, remove o arquivo do volume e sobe de novo se estava no ar.
+    if "${COMPOSE[@]}" ps -q 2>/dev/null | grep -q .; then
+      "${COMPOSE[@]}" down >/dev/null 2>&1 || true
+      WAS_UP=1
+    else
+      WAS_UP=0
+    fi
+    echo "Eliminando scanner.db local do volume Docker..."
+    "${COMPOSE[@]}" run --rm --entrypoint sh warm -c \
+      'rm -f /data/scanner.db /data/scanner.db-wal /data/scanner.db-shm' \
+      2>/dev/null || {
+      echo "Não foi possível remover via container — tente './run_docker.sh down' e apague manualmente." >&2
+      exit 1
+    }
+    echo "Banco local eliminado. Re-aqueça com: ./run_docker.sh warm"
+    if [[ "$WAS_UP" == "1" ]]; then
+      "${COMPOSE[@]}" up --build -d
+      echo "Stack local reiniciada (DB vazio até o warm)."
+    fi
+    ;;
   *)
     cat <<USAGE
-Uso: $0 {up|warm|logs|down|status|export-db} [args...]
+Uso: $0 {up|warm|logs|down|status|export-db|reset-db} [args...]
 
   up         sobe stack local (OpenLiteSpeed + Passenger OSS + PHP)
   warm [iv]  prewarm no volume Docker (ex.: warm 1h) — só local
@@ -141,6 +164,7 @@ Uso: $0 {up|warm|logs|down|status|export-db} [args...]
   logs       logs dos containers
   down       para o stack
   export-db  copia DB do volume → ./scanner.docker.db (opcional, fica no Mac)
+  reset-db   apaga o scanner.db local do volume Docker (dev only) e re-aquece
 
 Não faz deploy nem FTP. Produção = ./deploy.sh quando o local estiver ok.
 USAGE
