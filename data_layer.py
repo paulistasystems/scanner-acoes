@@ -727,6 +727,9 @@ def clear_blacklist():
     with _lock:
         conn = _connect()
         conn.execute("DELETE FROM blacklist")
+        # Igual a reinstate_symbol por símbolo: remove também o histórico de
+        # falhas para que o universo volte idêntico ao estado "reincluído".
+        conn.execute("DELETE FROM fetch_failures")
         conn.commit()
 
 
