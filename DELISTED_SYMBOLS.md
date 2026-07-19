@@ -33,6 +33,20 @@ falhas da camada de dados SQLite (`data_layer.list_failures()`).
 
 ---
 
+## 🆕 RE-DELISTED 2026-07-19 (1 símbolo)
+
+`RBRF11.SA` havia sido relistado em 2026-07-07, mas voltou a falhar de forma
+persistente no `warm_cron` (log `tmp/warm_cron.log` de 2026-07-19):
+`No price data found, symbol may be delisted (period=75d)` em todos os 4
+intervalos. Confirmado delistado novamente — removido de
+`symbols_fallback.py` e `php/symbols.json`.
+
+| Symbol | Categoria | Motivo |
+|--------|-----------|--------|
+| `RBRF11.SA` | FII | No price data found / may be delisted (Yahoo) — 2026-07-19 |
+
+---
+
 ## ✅ UPDATED SYMBOLS (6 symbols)
 
 These symbols have been successfully updated in `scanner_interface_Streamlit.py`:

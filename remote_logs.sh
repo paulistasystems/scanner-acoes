@@ -25,10 +25,11 @@ LOCAL_WARM_LOG="$LOCAL_DIR/tmp/warm_cron.log"
 REMOTE_STDERR_LOG="/scanner/stderr.log"
 LOCAL_STDERR_LOG="$LOCAL_DIR/stderr.log"
 LIST_ONLY=false
+DELETE_REMOTE=false
 
 usage() {
   cat <<EOF
-Uso: $(basename "$0") [--list] [-h|--help]
+Uso: $(basename "$0") [--list] [--delete] [-h|--help]
 
 Baixa logs do servidor (FTP /scanner) para ./remote_logs/.
 
@@ -36,6 +37,7 @@ Foco: $REMOTE_WARM_LOG
   (cron: warm_cron.py >> .../tmp/warm_cron.log 2>&1)
 
   --list     lista logs remotos conhecidos (não baixa)
+  --delete   apaga os logs remotos após o download bem-sucedido
   -h, --help esta ajuda
 
 Credenciais: .env (FTP_HOST, FTP_USER, FTP_PASS) — mesmo padrão do deploy.sh.
@@ -45,6 +47,7 @@ EOF
 for arg in "$@"; do
   case "$arg" in
     --list) LIST_ONLY=true ;;
+    --delete) DELETE_REMOTE=true ;;
     -h|--help) usage; exit 0 ;;
     *)
       echo "Argumento desconhecido: $arg" >&2
@@ -108,6 +111,21 @@ get -c $REMOTE_STDERR_LOG -o $LOCAL_STDERR_LOG
 get -c /scanner/tmp/warm_cron_status.json -o $LOCAL_DIR/tmp/warm_cron_status.json
 bye
 EOF
+
+if [[ "$DELETE_REMOTE" == true ]]; then
+  echo ""
+  echo "Removendo logs remotos (após download)..."
+  lftp -u "$FTP_USER","$FTP_PASS" "ftp://$FTP_HOST" <<EOF
+set ftp:passive-mode on
+set net:timeout 30
+set net:max-retries 2
+set cmd:fail-exit no
+rm -f $REMOTE_WARM_LOG
+rm -f $REMOTE_STDERR_LOG
+rm -f /scanner/tmp/warm_cron_status.json
+bye
+EOF
+fi
 
 echo ""
 echo "Logs salvos em: $LOCAL_DIR"

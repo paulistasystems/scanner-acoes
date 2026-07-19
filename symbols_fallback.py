@@ -159,7 +159,7 @@ FIIS_B3 = [
     'KNRI11.SA', 'PVBI11.SA', 'JSRE11.SA', 'BRCR11.SA', 'RCRB11.SA',
     # Papel (CRI / CRA)
     'MXRF11.SA', 'CPTS11.SA', 'RBRR11.SA', 'RECR11.SA',
-    'VGIP11.SA', 'KNCR11.SA', 'HGCR11.SA', 'RBRF11.SA',
+    'VGIP11.SA', 'KNCR11.SA', 'HGCR11.SA',
     # Híbridos / Diversificados
     'HGBS11.SA', 'ALZR11.SA', 'TRXF11.SA', 'TGAR11.SA',
 ]

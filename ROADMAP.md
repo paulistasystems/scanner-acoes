@@ -489,18 +489,20 @@ probe PHP que cobriu os **214/214 símbolos** do universo (0 delistados de verda
 
 ### Solução adotada (validada localmente)
 - **`php/yahoo_chart.php`** — proxy direto ao Chart API v8 (browser UA, sem crumb).
-  Egress único, usado em local e remoto. `php/yahoo_probe.php` + `php/symbols.json`
+  Egress único, usado em local e remoto. Deployado no subpath `/scanner/` do domínio
+  (`public_html/scanner/`). `php/yahoo_probe.php` + `php/symbols.json`
   (gerado por `php/gen_symbols.py`) = diagnóstico de cobertura.
 - **`data_layer._fetch_chart_direct`** — quando `SCANNER_CHART_URL` está setada, busca
   via esse proxy em vez de Yahoo direto. `run_web.sh` sobe `php -S` local (PHP 8.3) e
-  exporta a URL; o `.env` local aponta para ele.
+  exporta a URL; o `.env` local aponta para ele. Em produção a URL é
+  `https://paulista.dev/scanner/yahoo_chart.php`.
 - **Local 100% funcional**: prewarm preencheu 1.214 barras via proxy, 0 falhas; leitura
   determinística; boot do scanner OK nos 4 intervalos.
 
 ### 🔴 Pendente — o warm **remoto** não progride (investigação futura)
 Em produção o warm worker **trava**: `done` para de subir (ex.: 31/642 congelado em
 `XBOV11.SA`), `stderr.log` sem crescer (nenhum erro novo de yfinance). A proxy em si
-funciona — self-probe `https://paulista.dev/yahoo_chart.php` = 200 em ~0.6s.
+funciona — self-probe `https://paulista.dev/scanner/yahoo_chart.php` = 200 em ~0.6s.
 
 **Hipótese forte:** o processo Passenger **não está lendo `SCANNER_CHART_URL`** porque
 `app.py` chamava `load_dotenv()` sem path — o python-dotenv busca a partir do CWD, que no

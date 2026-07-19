@@ -59,10 +59,11 @@ O `scanner.db` é a fonte única de verdade; `data_layer.prewarm()` é o passo d
   sem Passenger, sem freeze. O app web só lê o DB.
 
 Egress do Yahoo: `data_layer._fetch_chart_direct` aponta para o proxy PHP
-(`SCANNER_CHART_URL=https://paulista.dev/yahoo_chart.php` em `/scanner/.env`), porque o
+(`SCANNER_CHART_URL=https://paulista.dev/scanner/yahoo_chart.php` em `/scanner/.env`), porque o
 bootstrap crumb do `yfinance` recebe 401 no IP do servidor; o endpoint público
-`/v8/finance/chart` responde sem crumb. O proxy (`php/yahoo_chart.php`, deployado na raiz
-do domínio, **idêntico ao do repo**) só repassa a chamada (não é a causa do travamento —
+`/v8/finance/chart` responde sem crumb. O proxy (`php/yahoo_chart.php`, deployado no
+subpath `/scanner/` do domínio, **idêntico ao do repo**) só repassa a chamada (não é a
+causa do travamento —
 o problema é exclusivamente a thread do Passenger).
 
 Cache write-through (`chart_cache`): o `yahoo_chart.php` também grava o JSON cru do Yahoo

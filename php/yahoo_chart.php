@@ -4,7 +4,7 @@
  *
  * Este é o ÚNICO caminho de aquisição de candles do scanner, usado tanto local
  * (servido por `php -S` via php/run_php_server.sh) quanto em produção
- * (https://paulista.dev/yahoo_chart.php). O `data_layer._fetch_chart_direct`
+ * (https://paulista.dev/scanner/yahoo_chart.php). O `data_layer._fetch_chart_direct`
  * aponta para esta URL via `SCANNER_CHART_URL`.
  *
  * Por que um proxy PHP e não yfinance direto: o yfinance faz um bootstrap
@@ -94,7 +94,7 @@ echo $body;
 function _scanner_db_path(): ?string {
     $env = getenv('SCANNER_DB');
     if ($env && @is_file($env)) return $env;
-    $prod = '/home/paulista/scanner/scanner.db';     // proxy na raiz do domínio
+    $prod = '/home/paulista/scanner/scanner.db';     // proxy no subpath /scanner/ do domínio
     if (@is_file($prod)) return $prod;
     $local = __DIR__ . '/../scanner.db';             // dev: php/ sob o repo
     if (@is_file($local)) return $local;

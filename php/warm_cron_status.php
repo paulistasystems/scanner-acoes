@@ -2,9 +2,9 @@
 /**
  * php/warm_cron_status.php — O warm_cron está rodando em dia?
  *
- * Deploy (raiz do domínio, junto do yahoo_chart.php):
- *   https://paulista.dev/warm_cron_status.php
- *   https://paulista.dev/warm_cron_status.php?format=html
+ * Deploy (subpath /scanner/ do domínio, junto de yahoo_chart.php):
+ *   https://paulista.dev/scanner/warm_cron_status.php
+ *   https://paulista.dev/scanner/warm_cron_status.php?format=html
  *
  * Sinais (em ordem de utilidade)
  * ------------------------------

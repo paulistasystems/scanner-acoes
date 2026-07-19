@@ -24,7 +24,7 @@ O app web apenas LÊ o scanner.db compartilhado.
 Heartbeat
 ---------
 A cada execução grava `tmp/warm_cron_status.json` (start/end/skip/error). O PHP
-`php/warm_cron_status.php` (deploy na raiz do domínio) lê esse arquivo e diz se
+`php/warm_cron_status.php` (deploy no subpath `/scanner/` do domínio) lê esse arquivo e diz se
 o cron está "em dia" — mais confiável do que tentar ler o crontab via web.
 
 Idempotente

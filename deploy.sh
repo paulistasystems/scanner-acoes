@@ -210,6 +210,32 @@ else
   echo "   App files não mudaram, pulando sincronização."
 fi
 
+# 3b. Upload PHP proxies + symbols.json para o SUBPATH /scanner/ DO DOMÍNIO
+#     (paulista.dev/scanner/): yahoo_chart.php, yahoo_bulk.php, yahoo_probe.php,
+#     yahoo_snapshot.php, warm_cron_status.php e symbols.json (universo
+#     autoritativo do egress). Estes vivem no subpath /scanner/ do docroot
+#     (public_html/scanner/), servidos em https://paulista.dev/scanner/*.php.
+#     O symbols.json DEVE acompanhar symbols_fallback.py: mudanças no universo
+#     de ativos (ex.: delistar RBRF11.SA) exigem reupload deste ficheiro.
+PHP_DEPLOY="/domains/paulista.dev/public_html/scanner"
+echo ""
+echo "==> Subindo PHP proxies + symbols.json para $PHP_DEPLOY ..."
+lftp -u "$FTP_USER","$FTP_PASS" "ftp://$FTP_HOST" <<EOF
+set ftp:passive-mode on
+set net:timeout 60
+set net:max-retries 3
+# Apenas os ficheiros conhecidos do subpath — NUNCA apagar o resto do docroot.
+mkdir -p $PHP_DEPLOY
+put php/yahoo_chart.php   -o $PHP_DEPLOY/yahoo_chart.php
+put php/yahoo_bulk.php    -o $PHP_DEPLOY/yahoo_bulk.php
+put php/yahoo_probe.php   -o $PHP_DEPLOY/yahoo_probe.php
+put php/yahoo_snapshot.php -o $PHP_DEPLOY/yahoo_snapshot.php
+put php/warm_cron_status.php -o $PHP_DEPLOY/warm_cron_status.php
+put php/symbols.json      -o $PHP_DEPLOY/symbols.json
+bye
+EOF
+echo "   PHP proxies + symbols.json sincronizados (docroot intacto)."
+
 # 4. Verify (read-only HTTP — não mexe no DB)
 echo ""
 echo "==> Verificando API (só leitura)..."
