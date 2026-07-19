@@ -152,12 +152,12 @@ that throttled/truncated Yahoo responses used to cause.
 - When editing scanners, preserve `baixar_dados` / `baixar_dados_15m` signatures —
   they have ~22 call sites that must stay unchanged.
 - **Mudanças no app remoto (`paulista.dev/scanner`, Phusion Passenger) — deploy e
-  restart só pelo usuário.** Subir arquivos ao servidor via FTP (deploy de
-  `app.py`/`data_layer.py`/`.env`/PHP) e reiniciar o app são feitos pelo usuário
-  (deploy por FTP; restart pelo console do DirectAdmin). **Pergunte ao usuário antes**
-  de qualquer um dos dois — não suba arquivos ao servidor nem use `tmp/restart.txt`
-  por conta própria. Checagens só-leitura (`curl /api/status`, `/api/bars`, baixar
-  `stderr.log`, listar diretórios via FTP) seguem liberadas.
+  restart automatizados pelo Claude.** O pipeline de deploy está estável: o Claude pode
+  subir arquivos ao servidor via FTP (deploy de `app.py`/`data_layer.py`/`.env`/PHP/JS/CSS/HTML)
+  e reiniciar o app escrevendo `tmp/restart.txt` (touch no app root `/home/paulista/scanner/`),
+  sem precisar perguntar ao usuário antes de cada mudança. Checagens só-leitura
+  (`curl /api/status`, `/api/bars`, baixar `stderr.log`, listar diretórios via FTP)
+  também seguem liberadas. Sempre confirme ao usuário após o deploy/restart concluído.
 - **Desenvolvimento e Branches:** Trabalhe e commite diretamente na branch `master` (branch padrão) deste repositório sem a necessidade de criar branches temporárias/intermediárias, a menos que o usuário instrua explicitamente o contrário.
 - **Push via `gh`:** o git remoto é HTTPS e não tem credencial armazenada no shell. Para
   fazer push, use o `gh` (já autenticado como `paulistasystems`): `gh auth setup-git`
