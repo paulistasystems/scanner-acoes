@@ -1,11 +1,93 @@
 #!/usr/bin/env bash
-# Stack local (OrbStack): OpenLiteSpeed + Passenger OSS + PHP.
+# Stack local (Linux Ubuntu / OrbStack): OpenLiteSpeed + Passenger OSS + PHP.
 # Só desenvolvimento — não faz FTP/deploy/upload.
+#
+# No Linux Ubuntu: se o docker não estiver instalado, oferece instalar via
+# script oficial (docker-ce) chamando sudo. No macOS espera o OrbStack.
 set -euo pipefail
 cd "$(dirname "$0")"
 
+# ---------------------------------------------------------------------------
+# Garante que o docker esteja disponível e o daemon rodando.
+# No Linux instala o docker-ce se faltar; no macOS pede o OrbStack.
+# ---------------------------------------------------------------------------
 if ! command -v docker >/dev/null 2>&1; then
-  echo "docker não encontrado — abra o OrbStack." >&2
+  os="$(uname -s)"
+  if [[ "$os" == "Darwin" ]]; then
+    echo "docker não encontrado — abra o OrbStack (ou Docker Desktop) no macOS." >&2
+    exit 1
+  fi
+
+  echo "docker não encontrado neste Linux."
+  sudo_cmd=""
+  if [[ "$(id -u)" -ne 0 ]]; then
+    if command -v sudo >/dev/null 2>&1; then
+      sudo_cmd="sudo"
+    else
+      echo "precisa de root para instalar o Docker. Rode como root ou instale manualmente." >&2
+      exit 1
+    fi
+  fi
+
+  echo "Instalando o Docker (docker-ce) via script oficial..."
+  tmp_script="$(mktemp /tmp/get-docker.XXXXXX.sh)"
+  if ! curl -fsSL https://get.docker.com -o "$tmp_script"; then
+    echo "Falhou ao baixar o instalador do Docker." >&2
+    rm -f "$tmp_script"
+    exit 1
+  fi
+  $sudo_cmd sh "$tmp_script" || { rm -f "$tmp_script"; exit 1; }
+  rm -f "$tmp_script"
+
+  # garante que o grupo docker exista (criado pelo pacote, mas reforça)
+  $sudo_cmd getent group docker >/dev/null 2>&1 || $sudo_cmd groupadd docker
+
+  if ! docker info >/dev/null 2>&1; then
+    $sudo_cmd systemctl enable --now docker 2>/dev/null || \
+      $sudo_cmd service docker start 2>/dev/null || true
+  fi
+
+  # adiciona o usuário ao grupo docker (evita sudo nos próximos comandos)
+  if [[ -n "$sudo_cmd" ]] && [[ "$(id -un)" != "root" ]]; then
+    $sudo_cmd usermod -aG docker "$(id -un)"
+    echo "Você foi adicionado ao grupo 'docker'."
+    echo "Aplique o grupo na sessão atual com:  sg docker -c '...'  (ou relogue / reinicie)."
+    # tenta aplicar o grupo já na sessão corrente para comandos seguintes
+    if command -v sg >/dev/null 2>&1; then
+      export DOCKER_GROUP_APPLIED=1
+    fi
+  fi
+
+  if ! docker info >/dev/null 2>&1; then
+    echo "O daemon do Docker não está acessível. Rode 'newgrp docker' ou reinicie a sessão." >&2
+    exit 1
+  fi
+fi
+
+# Se acabamos de adicionar o usuário ao grupo docker nesta sessão, re-executa
+# o script sob o grupo docker para que os comandos seguintes funcionem sem relogin.
+if [[ "${DOCKER_GROUP_APPLIED:-0}" == "1" ]] && [[ "$(id -nG)" != *docker* ]]; then
+  exec sg docker -c "$(printf '%q ' "$0" "$@")"
+fi
+
+# docker compose (plugin ou binário legado)
+if docker compose version >/dev/null 2>&1; then
+  COMPOSE=(docker compose)
+elif command -v docker-compose >/dev/null 2>&1; then
+  COMPOSE=(docker-compose)
+else
+  echo "docker compose não encontrado. Instale o plugin: sudo apt-get install docker-compose-plugin" >&2
+  exit 1
+fi
+
+# Garante que o daemon esteja acessível (OrbStack parado no macOS, etc.)
+if ! docker info >/dev/null 2>&1; then
+  os="$(uname -s)"
+  if [[ "$os" == "Darwin" ]]; then
+    echo "O daemon do Docker não responde — abra o OrbStack (ou Docker Desktop) no macOS e tente de novo." >&2
+  else
+    echo "O daemon do Docker não está acessível. Rode 'newgrp docker' ou reinicie a sessão." >&2
+  fi
   exit 1
 fi
 
@@ -14,7 +96,7 @@ shift || true
 
 case "$cmd" in
   up)
-    docker compose up --build -d "$@"
+    "${COMPOSE[@]}" up --build -d "$@"
     echo ""
     echo "  Local only (sem upload / sem produção)"
     echo "  UI:      http://localhost:8080/scanner/"
@@ -28,19 +110,19 @@ case "$cmd" in
   warm)
     # prewarm só no volume compose
     if [[ $# -eq 0 ]]; then
-      docker compose --profile warm run --rm warm
+      "${COMPOSE[@]}" --profile warm run --rm warm
     else
-      docker compose --profile warm run --rm warm "$@"
+      "${COMPOSE[@]}" --profile warm run --rm warm "$@"
     fi
     ;;
   logs)
-    docker compose logs -f --tail=120 "$@"
+    "${COMPOSE[@]}" logs -f --tail=120 "$@"
     ;;
   down)
-    docker compose down "$@"
+    "${COMPOSE[@]}" down "$@"
     ;;
   status|ps)
-    docker compose ps
+    "${COMPOSE[@]}" ps
     echo "---"
     curl -fsS --max-time 5 "http://localhost:8080/scanner/api/status" \
       | python3 -m json.tool 2>/dev/null \
