@@ -218,9 +218,17 @@ fi
 #     O symbols.json DEVE acompanhar symbols_fallback.py: mudanças no universo
 #     de ativos (ex.: delistar RBRF11.SA) exigem reupload deste ficheiro.
 PHP_DEPLOY="/domains/paulista.dev/public_html/scanner"
-echo ""
-echo "==> Subindo PHP proxies + symbols.json para $PHP_DEPLOY ..."
-lftp -u "$FTP_USER","$FTP_PASS" "ftp://$FTP_HOST" <<EOF
+PHP_MARKER="/tmp/scanner_php_marker"
+CURRENT_PHP_HASH=$(find php/yahoo_chart.php php/yahoo_bulk.php php/yahoo_probe.php \
+  php/yahoo_snapshot.php php/warm_cron_status.php php/symbols.json -type f \
+  -exec sha1sum {} \; | sort | sha1sum | cut -d' ' -f1)
+PREVIOUS_PHP_HASH=""
+[ -f "$PHP_MARKER" ] && PREVIOUS_PHP_HASH=$(cat "$PHP_MARKER")
+
+if [ "$FORCE_DEPLOY" = true ] || [ "$CURRENT_PHP_HASH" != "$PREVIOUS_PHP_HASH" ]; then
+  echo ""
+  echo "==> Subindo PHP proxies + symbols.json para $PHP_DEPLOY ..."
+  lftp -u "$FTP_USER","$FTP_PASS" "ftp://$FTP_HOST" <<EOF
 set ftp:passive-mode on
 set net:timeout 60
 set net:max-retries 3
@@ -234,7 +242,12 @@ put php/warm_cron_status.php -o $PHP_DEPLOY/warm_cron_status.php
 put php/symbols.json      -o $PHP_DEPLOY/symbols.json
 bye
 EOF
-echo "   PHP proxies + symbols.json sincronizados (docroot intacto)."
+  echo "$CURRENT_PHP_HASH" > "$PHP_MARKER"
+  echo "   PHP proxies + symbols.json sincronizados (docroot intacto)."
+else
+  echo ""
+  echo "==> PHP proxies + symbols.json não mudaram, pulando sincronização."
+fi
 
 # 4. Verify (read-only HTTP — não mexe no DB)
 echo ""
