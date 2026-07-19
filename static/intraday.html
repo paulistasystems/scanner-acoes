@@ -4,7 +4,15 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Scanner Intraday / Abertura</title>
-    <link rel="stylesheet" href="style.css">
+    <script>
+        // Define a base absoluta a partir do pathname (mount-agnostic: funciona em / ou /scanner)
+        window.APP_BASE = (function () {
+            var p = window.location.pathname;
+            var i = p.lastIndexOf('/');
+            return (i >= 0 ? p.slice(0, i + 1) : '/');
+        })();
+        document.write('<link rel="stylesheet" href="' + window.APP_BASE + 'style.css">');
+    </script>
 </head>
 <body>
     <header>
@@ -75,6 +83,8 @@
         </section>
     </main>
 
-    <script src="intraday.js"></script>
+    <script>
+        document.write('<script src="' + window.APP_BASE + 'intraday.js"><\/script>');
+    </script>
 </body>
 </html>
