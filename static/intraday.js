@@ -446,20 +446,50 @@ Seja objetivo, direto e conservador. Se não houver setups bons, diga claramente
 
     const textToCopy = promptTrader + corpo;
 
-    navigator.clipboard.writeText(textToCopy).then(() => {
-        const originalText = copyBtn.textContent;
-        copyBtn.textContent = '✅ Copiado!';
-        copyBtn.style.background = 'linear-gradient(135deg, #059669, #047857)';
-        copyBtn.style.color = '#fff';
-        setTimeout(() => {
-            copyBtn.textContent = originalText;
-            copyBtn.style.background = '';
-            copyBtn.style.color = '';
-        }, 2000);
+    copyText(textToCopy).then(() => {
+        flashCopied(copyBtn);
     }).catch(err => {
         console.error('Erro ao copiar para clipboard:', err);
         alert('Erro ao copiar automaticamente.');
     });
+}
+
+function copyText(text) {
+    if (navigator.clipboard && navigator.clipboard.writeText && window.isSecureContext) {
+        return navigator.clipboard.writeText(text);
+    }
+    return new Promise((resolve, reject) => {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.position = 'fixed';
+        ta.style.top = '-9999px';
+        ta.setAttribute('readonly', '');
+        document.body.appendChild(ta);
+        ta.select();
+        ta.setSelectionRange(0, ta.value.length);
+        let ok = false;
+        try {
+            ok = document.execCommand('copy');
+        } catch (e) {
+            ok = false;
+        }
+        document.body.removeChild(ta);
+        if (ok) resolve();
+        else reject(new Error('execCommand copy falhou'));
+    });
+}
+
+function flashCopied(copyBtn) {
+    if (!copyBtn) return;
+    const originalText = copyBtn.textContent;
+    copyBtn.textContent = '✅ Copiado!';
+    copyBtn.style.background = 'linear-gradient(135deg, #059669, #047857)';
+    copyBtn.style.color = '#fff';
+    setTimeout(() => {
+        copyBtn.textContent = originalText;
+        copyBtn.style.background = '';
+        copyBtn.style.color = '';
+    }, 2000);
 }
 
 function renderTable(container, columns, rows) {
