@@ -38,8 +38,87 @@ echo "   Files: $(find "$STAGE" -type f | wc -l | tr -d ' ')"
 echo "   (sem scanner.db / sem sync de banco)"
 
 FORCE_DEPLOY=false
-if [[ "${1:-}" == "--force" ]]; then
-  FORCE_DEPLOY=true
+SHOW_HELP=false
+RESET_DB=false
+UNKNOWN_ARGS=()
+for arg in "$@"; do
+  case "$arg" in
+    --force) FORCE_DEPLOY=true ;;
+    --reset-db) RESET_DB=true ;;
+    -h|--help) SHOW_HELP=true ;;
+    *) UNKNOWN_ARGS+=("$arg") ;;
+  esac
+done
+
+if [ "${#UNKNOWN_ARGS[@]}" -gt 0 ]; then
+  echo "   ERRO: parâmetro(s) desconhecido(s): ${UNKNOWN_ARGS[*]}" >&2
+  cat <<'HELP'
+Uso: ./deploy.sh [opções]
+
+Faz upload da aplicação (app only) para o servidor via FTP.
+NUNCA sincroniza scanner.db (nem upload nem download) — salvo com --reset-db.
+
+Opções:
+  --force      Força o upload de site-packages e dos ficheiros da app,
+               independentemente do hash de mudança.
+  --reset-db   Apaga o scanner.db de PRODUÇÃO no servidor e dispara re-aquecimento
+               via warm_cron (ação destrutiva — confirmação solicitada).
+  -h, --help   Mostra esta ajuda e sai.
+
+Exemplos:
+  ./deploy.sh
+  ./deploy.sh --force
+  ./deploy.sh --reset-db
+HELP
+  exit 1
+fi
+
+if [ "$SHOW_HELP" = true ]; then
+  cat <<'HELP'
+Uso: ./deploy.sh [opções]
+
+Faz upload da aplicação (app only) para o servidor via FTP.
+NUNCA sincroniza scanner.db (nem upload nem download) — salvo com --reset-db.
+
+Opções:
+  --force      Força o upload de site-packages e dos ficheiros da app,
+               independentemente do hash de mudança.
+  --reset-db   Apaga o scanner.db de PRODUÇÃO no servidor e dispara re-aquecimento
+               via warm_cron (ação destrutiva — confirmação solicitada).
+  -h, --help   Mostra esta ajuda e sai.
+
+Exemplos:
+  ./deploy.sh
+  ./deploy.sh --force
+  ./deploy.sh --reset-db
+HELP
+  exit 0
+fi
+
+if [ "$RESET_DB" = true ]; then
+  echo ""
+  echo "==> ATENÇÃO: reset remoto do scanner.db de PRODUÇÃO"
+  echo "   Isto apaga o banco de dados em produção (/scanner/scanner.db) e força"
+  echo "   o re-aquecimento via warm_cron. Os scanners ficarão vazios até o warm."
+  read -r -p "   Confirma a eliminação do scanner.db remoto? [digite RESET para confirmar]: " CONFIRM
+  if [ "$CONFIRM" != "RESET" ]; then
+    echo "   Cancelado. Nenhuma alteração no banco remoto."
+    exit 1
+  fi
+  echo "   Eliminando scanner.db remoto..."
+  lftp -u "$FTP_USER","$FTP_PASS" "ftp://$FTP_HOST" <<EOF
+set ftp:passive-mode on
+set net:timeout 60
+set net:max-retries 3
+rm -f /scanner/scanner.db /scanner/scanner.db-wal /scanner/scanner.db-shm
+bye
+EOF
+  echo "   Banco remoto eliminado. Dispare o warm_cron no servidor para re-aquecer:"
+  echo "      cd /home/paulista/scanner && /home/paulista/virtualenv/scanner/3.9/bin/python warm_cron.py"
+  echo "   (ou aguarde o próximo ciclo de cron 10-17h, seg-sex)."
+fi
+
+if [ "$FORCE_DEPLOY" = true ]; then
   echo "   Modo force ativado — forçando upload de site-packages e app."
 fi
 
@@ -57,14 +136,15 @@ fi
 
 if [ "$FORCE_DEPLOY" = true ] || [ "$CURRENT_REQ_HASH" != "$PREVIOUS_REQ_HASH" ] || [ ! -d "$BUILD_DIR" ]; then
   echo "   Requirements mudaram ou não foram compilados localmente. Instalando pacotes no Docker..."
-  rm -rf "$BUILD_DIR"
+  rm -rf "$BUILD_DIR" tmp_build_output
   mkdir -p "$BUILD_DIR"
-  mkdir -p tmp_build_output
 
-  docker compose run --rm passenger sh -c 'mkdir -p /tmp/scanner_linux_sitepackages && pip install -r requirements-py39.txt --target /tmp/scanner_linux_sitepackages && cp -r /tmp/scanner_linux_sitepackages/* /app/tmp_build_output/'
+  CONTAINER="scanner_build_$$"
+  docker rm -f "$CONTAINER" >/dev/null 2>&1
+  docker run -v "$PWD":/app -w /app --name "$CONTAINER" scanner_acoes-passenger:latest sh -c 'rm -rf /tmp/wheels && mkdir -p /tmp/wheels && pip install -r requirements-py39.txt --target /tmp/wheels --no-cache-dir && echo DONE'
 
-  mv tmp_build_output/* "$BUILD_DIR/"
-  rm -rf tmp_build_output
+  docker cp "$CONTAINER:/tmp/wheels/." "$BUILD_DIR/"
+  docker rm -f "$CONTAINER" >/dev/null 2>&1
 
   echo "   Subindo novos site-packages para o servidor..."
   lftp -u "$FTP_USER","$FTP_PASS" "ftp://$FTP_HOST" <<EOF
