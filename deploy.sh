@@ -113,9 +113,19 @@ set net:max-retries 3
 rm -f /scanner/scanner.db /scanner/scanner.db-wal /scanner/scanner.db-shm
 bye
 EOF
-  echo "   Banco remoto eliminado. Dispare o warm_cron no servidor para re-aquecer:"
-  echo "      cd /home/paulista/scanner && /home/paulista/virtualenv/scanner/3.9/bin/python warm_cron.py"
-  echo "   (ou aguarde o próximo ciclo de cron 10-17h, seg-sex)."
+  echo "   Banco remoto eliminado. Disparando re-aquecimento via POST /api/warm..."
+  # O worker de warm em background do servidor (warming.start_warm) reassume o
+  # preenchimento; o frontend faz poll de /api/status. Não depende de cron.
+  sleep 2
+  if curl -fsS --connect-timeout 10 -X POST "https://paulista.dev/scanner/api/warm" \
+       2>/dev/null | python3 -m json.tool 2>/dev/null; then
+    echo "   Warm remoto disparado. Acompanhe em: https://paulista.dev/scanner/api/status"
+  else
+    echo "   ⚠️  Aviso: não foi possível disparar /api/warm (servidor offline ou bloqueio)."
+    echo "      Dispare manualmente no servidor:"
+    echo "      cd /home/paulista/scanner && /home/paulista/virtualenv/scanner/3.9/bin/python warm_cron.py"
+    echo "      (ou aguarde o próximo ciclo de cron 10-17h, seg-sex)."
+  fi
 fi
 
 if [ "$FORCE_DEPLOY" = true ]; then

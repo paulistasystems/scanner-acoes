@@ -94,7 +94,34 @@ fi
 cmd="${1:-up}"
 shift || true
 
+# Validação estrita: comandos conhecidos; qualquer outro sai com erro (exit 2)
+# e mostra o usage. Antigamente um comando inválido caía no caso '*' sem
+# reclamar o suficiente; agora falha de forma inequívoca.
 case "$cmd" in
+  up|warm|logs|down|status|ps|export-db|reset|-h|--help|help) : ;;
+  *)
+    echo "ERRO: comando desconhecido: '$cmd'" >&2
+    cmd="__invalid__"
+    ;;
+esac
+
+case "$cmd" in
+  __invalid__)
+    cat <<USAGE
+Uso: $0 {up|warm|logs|down|status|reset|export-db} [args...]
+
+  up         sobe stack local (OpenLiteSpeed + Passenger OSS + PHP)
+  warm [iv]  prewarm no volume Docker (ex.: warm 1h) — só local
+  status     compose ps + /scanner/api/status local
+  logs       logs dos containers
+  down       para o stack
+  reset      apaga o scanner.db do volume local (dev only); re-aquece com: warm
+  export-db  copia DB do volume → ./scanner.docker.db (opcional)
+
+Não faz deploy nem FTP. Produção = ./deploy.sh quando o local estiver ok.
+USAGE
+    exit 2
+    ;;
   up)
     "${COMPOSE[@]}" up --build -d "$@"
     echo ""
@@ -104,9 +131,9 @@ case "$cmd" in
     echo "  chart:   http://localhost:8080/yahoo_chart.php?symbol=PETR4.SA&interval=1d&range=5d"
     echo "  warm:    ./run_docker.sh warm          # preenche DB do volume Docker"
     echo "  warm 1h: ./run_docker.sh warm 1h"
+    echo "  reset:   ./run_docker.sh reset         # apaga scanner.db do volume local"
     echo "  logs:    ./run_docker.sh logs"
     echo "  down:    ./run_docker.sh down"
-    echo "  reset-db: apaga o scanner.db local do volume Docker (dev only)"
     ;;
   warm)
     # prewarm só no volume compose
@@ -132,7 +159,7 @@ case "$cmd" in
   export-db)
     exec ./db_sync.sh export
     ;;
-  reset-db)
+  reset)
     # Apaga o scanner.db local do volume Docker (desenvolvimento apenas).
     # Para a stack, remove o arquivo do volume e sobe de novo se estava no ar.
     if "${COMPOSE[@]}" ps -q 2>/dev/null | grep -q .; then
@@ -154,17 +181,35 @@ case "$cmd" in
       echo "Stack local reiniciada (DB vazio até o warm)."
     fi
     ;;
-  *)
+  -h|--help|help)
     cat <<USAGE
-Uso: $0 {up|warm|logs|down|status|export-db|reset-db} [args...]
+Uso: $0 [comando] [args...]
+
+Comandos:
+  up         sobe stack local (OpenLiteSpeed + Passenger OSS + PHP)
+  warm [iv]  prewarm no volume Docker (ex.: warm 1h) — só local
+  status     compose ps + /scanner/api/status local
+  logs       logs dos containers
+  down       para o stack
+  reset      apaga o scanner.db do volume local (dev only); re-aquece com: warm
+  export-db  copia DB do volume → ./scanner.docker.db (opcional)
+
+Não faz deploy nem FTP. Produção = ./deploy.sh quando o local estiver ok.
+USAGE
+    exit 0
+    ;;
+  *)
+    echo "ERRO: comando desconhecido: '$cmd'" >&2
+    cat <<USAGE
+Uso: $0 {up|warm|logs|down|status|reset|export-db} [args...]
 
   up         sobe stack local (OpenLiteSpeed + Passenger OSS + PHP)
   warm [iv]  prewarm no volume Docker (ex.: warm 1h) — só local
   status     compose ps + /scanner/api/status local
   logs       logs dos containers
   down       para o stack
-  export-db  copia DB do volume → ./scanner.docker.db (opcional, fica no Mac)
-  reset-db   apaga o scanner.db local do volume Docker (dev only) e re-aquece
+  reset      apaga o scanner.db do volume local (dev only); re-aquece com: warm
+  export-db  copia DB do volume → ./scanner.docker.db (opcional)
 
 Não faz deploy nem FTP. Produção = ./deploy.sh quando o local estiver ok.
 USAGE
