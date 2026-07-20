@@ -25,7 +25,7 @@ LOCAL_WARM_LOG="$LOCAL_DIR/tmp/warm_cron.log"
 REMOTE_STDERR_LOG="/scanner/stderr.log"
 LOCAL_STDERR_LOG="$LOCAL_DIR/stderr.log"
 LIST_ONLY=false
-DELETE_REMOTE=false
+DELETE_REMOTE=true
 
 usage() {
   cat <<EOF
