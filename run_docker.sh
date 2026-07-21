@@ -118,6 +118,14 @@ case "$cmd" in
   export-db)
     exec ./db_sync.sh export
     ;;
+  reset-db)
+    # remove o scanner.db do volume Docker (scanner_acoes_data).
+    # não precisa que a stack esteja no ar; cria o volume se não existir.
+    echo "Removendo /data/scanner.db do volume scanner_acoes_data..."
+    docker volume create scanner_acoes_data >/dev/null
+    docker run --rm -v scanner_acoes_data:/data alpine rm -f /data/scanner.db \
+      && echo "DB removido (ou já inexistente). Rode './run_docker.sh warm' para repreenchê-lo."
+    ;;
   *)
     cat <<USAGE
 Uso: $0 {up|warm|logs|down|status|export-db} [args...]
@@ -127,6 +135,7 @@ Uso: $0 {up|warm|logs|down|status|export-db} [args...]
   status     compose ps + /scanner/api/status local
   logs       logs dos containers
   down       para o stack
+  reset-db   remove o scanner.db do volume Docker (limpa dados locais)
   export-db  copia DB do volume → ./scanner.docker.db (opcional, fica no Mac)
 
 Não faz deploy nem FTP. Produção = ./deploy.sh quando o local estiver ok.
