@@ -137,6 +137,7 @@ def index():
     return send_from_directory('static', 'index.html')
 
 @app.route('/day')
+@app.route('/day/')
 def intraday():
     return send_from_directory('static', 'intraday.html')
 
