@@ -552,6 +552,16 @@ def get_bars(symbol, interval, period):
     if df is None or df.empty:
         return pd.DataFrame()
 
+    # Remove trailing bar(s) com Close ausente ou Volume zero — Yahoo às vezes
+    # devolve uma barra vazia para o último dia antes de o dado ser finalizado.
+    # Isso quebraria scanners que leem df.iloc[-1] (Close=NaN, Volume=0).
+    if len(df) > 1:
+        last_idx = df.index[-1]
+        last_close = df['Close'].iloc[-1]
+        last_vol = df['Volume'].iloc[-1]
+        if pd.isna(last_close) or last_vol == 0:
+            df = df.iloc[:-1]
+
     days = _PERIOD_DAYS.get(period)
     if days:
         # Âncora o cutoff no timestamp mais recente disponível no banco para este
@@ -875,15 +885,20 @@ def data_ready(symbols=None, intervals=None, sample_missing=8, exclude_failures=
              "message": "Nenhum ativo verificado (blacklist vazia?)"
          }
 
-    # Se já batemos 80% do universe livre, ignorar e incluir as falhas dinâmicas via blacklist_missing
+    # Se já batemos 80% do universo livre, filtra in-memory símbolos com dados faltantes
     expected_total = n_sym * len(intervals)
     have_total = len([1 for s in base_symbols for iv in intervals if (s, iv) in filled_set])
     coverage_pct = round(100.0 * have_total / expected_total, 1) if expected_total else 0.0
 
     if coverage_pct > 80.0:
-       missing_here = blacklist_missing(base_symbols, intervals)
-       # Remove eles da base
-       base_symbols = [s for s in base_symbols if s not in missing_here]
+       # Filtra in-memory símbolos que faltam algum intervalo — NÃO persiste
+       # em blacklist (blacklist_missing() é agressivo demais e blacklista
+       # permanentemente durante warm parcial).
+       missing_set = set(
+           s for s in base_symbols
+           if not all((s, iv) in filled_set for iv in intervals)
+       )
+       base_symbols = [s for s in base_symbols if s not in missing_set]
        n_sym = len(base_symbols)
 
     symbols = base_symbols

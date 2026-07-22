@@ -1,5 +1,9 @@
 #!/bin/bash
-# deploy.sh — sobe aplicação e constrói dependências (site-packages) se necessário.
+# deploy.sh — sobe aplicação e dependências via tarball + PHP extraction.
+#
+# As etapas lentas (mirror FTP de milhares de ficheiros) foram substituídas por:
+#   tar → ftp_put (single file) → curl php/io.php (server-side extract).
+# Isto é muito mais rápido e confiável que o mirror FTP antigo.
 #
 # NUNCA sincroniza scanner.db (nem upload nem download).
 # O banco de produção fica no servidor; warm/DB é outro fluxo (cron / POST /api/warm).
@@ -12,6 +16,53 @@ cd "$SCRIPT_DIR"
 set -a; . ./.env; set +a
 echo "Deploy -> $FTP_USER@$FTP_HOST"
 echo "   Política: só aplicação. scanner.db NÃO é enviado nem baixado."
+
+# ---- Helpers (tarball+PHP para uploads rápidos) ----------------------------
+check_deps() {
+  for cmd in lftp curl openssl; do
+    if ! command -v "$cmd" >/dev/null 2>&1; then
+      echo "ERRO: $cmd não encontrado. Instale-o primeiro." >&2
+      exit 1
+    fi
+  done
+}
+
+ftp_put() {
+  local local_file="$1" remote_file="$2"
+  echo "   ftp_put: $(basename "$local_file") -> $remote_file"
+  lftp -u "$FTP_USER","$FTP_PASS" "ftp://$FTP_HOST" <<EOF
+set ftp:passive-mode on
+set net:timeout 120
+set net:max-retries 3
+put "$local_file" -o '$remote_file'
+bye
+EOF
+}
+
+io_php() {
+  local op="$1"; shift
+  local args=(-s --max-time 300 -G "https://paulista.dev/scanner/io.php")
+  args+=(--data-urlencode "token=${IO_PHP_TOKEN}")
+  args+=(--data-urlencode "op=${op}")
+  for p in "$@"; do
+    args+=(--data-urlencode "$p")
+  done
+  curl "${args[@]}"
+  echo
+}
+
+io_extract_tgz() {
+  local tgz="$1" dest="$2"
+  echo "   io.php extract_tgz $tgz -> $dest"
+  io_php "extract_tgz" "tgz=$tgz" "dest=$dest"
+}
+
+io_extract_app() {
+  echo "   io.php extract_app"
+  io_php "extract_app"
+}
+
+check_deps
 
 # 1. Stage — lista explícita de ficheiros da app (sem DB, sem venv, sem dumps)
 echo ""
@@ -132,7 +183,55 @@ if [ "$FORCE_DEPLOY" = true ]; then
   echo "   Modo force ativado — forçando upload de site-packages e app."
 fi
 
-# 2. Build and Upload site-packages to server virtualenv (só se requirements mudarem)
+# ── 1. PHP files (io.php + proxies) + static assets (js/css/html) ──────────
+# Upload PHP proxies, symbols.json, e io.php para o SUBPATH /scanner/ do
+# docroot (public_html/scanner/). O io.php PRECISA estar no ar ANTES dos
+# passos que o usam (extract_sitepackages, extract_app).
+#
+# Também sobe os assets estáticos (js/css/html) para o docroot — o LiteSpeed
+# consegue servir CSS/HTML mas retorna 503 para .js servidos via Flask
+# (send_from_directory/send_static_file). Colocando no docroot, o LiteSpeed
+# serve diretamente sem passar pelo Passenger/Flask.
+PHP_DEPLOY="/domains/paulista.dev/public_html/scanner"
+PHP_MARKER="/tmp/scanner_php_marker"
+CURRENT_PHP_HASH=$(find php/yahoo_chart.php php/yahoo_bulk.php php/yahoo_probe.php \
+  php/yahoo_snapshot.php php/warm_cron_status.php php/io.php php/symbols.json \
+  static/app.js static/intraday.js static/style.css static/index.html static/intraday.html \
+  -type f -exec sha1sum {} \; | sort | sha1sum | cut -d' ' -f1)
+PREVIOUS_PHP_HASH=""
+[ -f "$PHP_MARKER" ] && PREVIOUS_PHP_HASH=$(cat "$PHP_MARKER")
+
+if [ "$FORCE_DEPLOY" = true ] || [ "$CURRENT_PHP_HASH" != "$PREVIOUS_PHP_HASH" ]; then
+  echo ""
+  echo "==> 1. Subindo PHP proxies + static assets + symbols.json + io.php para $PHP_DEPLOY ..."
+  lftp -u "$FTP_USER","$FTP_PASS" "ftp://$FTP_HOST" <<EOF
+set ftp:passive-mode on
+set net:timeout 60
+set net:max-retries 3
+mkdir -p $PHP_DEPLOY 2>/dev/null || true
+put php/yahoo_chart.php   -o $PHP_DEPLOY/yahoo_chart.php
+put php/yahoo_bulk.php    -o $PHP_DEPLOY/yahoo_bulk.php
+put php/yahoo_probe.php   -o $PHP_DEPLOY/yahoo_probe.php
+put php/yahoo_snapshot.php -o $PHP_DEPLOY/yahoo_snapshot.php
+put php/warm_cron_status.php -o $PHP_DEPLOY/warm_cron_status.php
+put php/io.php            -o $PHP_DEPLOY/io.php
+put php/symbols.json      -o $PHP_DEPLOY/symbols.json
+put static/app.js         -o $PHP_DEPLOY/app.js
+put static/intraday.js    -o $PHP_DEPLOY/intraday.js
+put static/style.css      -o $PHP_DEPLOY/style.css
+put static/index.html     -o $PHP_DEPLOY/index.html
+put static/intraday.html  -o $PHP_DEPLOY/intraday.html
+bye
+EOF
+  echo "$CURRENT_PHP_HASH" > "$PHP_MARKER"
+  echo "   PHP proxies + static assets + symbols.json + io.php sincronizados (docroot)."
+else
+  echo ""
+  echo "==> 1. PHP proxies + static assets + symbols.json + io.php não mudaram, pulando."
+fi
+
+# ── 2. Build and Upload site-packages ────────────────────────────────────────
+# Só executa se requirements mudaram ou build não existe.
 echo ""
 echo "==> Verificando dependências (site-packages)..."
 BUILD_DIR="/tmp/scanner_linux_sitepackages"
@@ -146,31 +245,32 @@ fi
 
 if [ "$FORCE_DEPLOY" = true ] || [ "$CURRENT_REQ_HASH" != "$PREVIOUS_REQ_HASH" ] || [ ! -d "$BUILD_DIR" ]; then
   echo "   Requirements mudaram ou não foram compilados localmente. Instalando pacotes no Docker..."
-  rm -rf "$BUILD_DIR" tmp_build_output
+  # Remove leftover root-owned files from previous docker builds.
+  docker run --rm -v "$BUILD_DIR":/clean alpine sh -c 'rm -rf /clean/* /clean/.[!.]*' >/dev/null 2>&1 || true
+  rm -rf "$BUILD_DIR" tmp_build_output 2>/dev/null || true
   mkdir -p "$BUILD_DIR"
 
-  CONTAINER="scanner_build_$$"
-  docker rm -f "$CONTAINER" >/dev/null 2>&1
-  docker run -v "$PWD":/app -w /app --name "$CONTAINER" scanner_acoes-passenger:latest sh -c 'rm -rf /tmp/wheels && mkdir -p /tmp/wheels && pip install -r requirements-py39.txt --target /tmp/wheels --no-cache-dir && echo DONE'
+  docker run --rm \
+    -v "$PWD/requirements-py39.txt":/req.txt:ro \
+    -v "$BUILD_DIR":/wheels \
+    python:3.9-slim-bookworm \
+    sh -c 'pip install -r /req.txt --target /wheels --no-cache-dir && echo DONE'
 
-  docker cp "$CONTAINER:/tmp/wheels/." "$BUILD_DIR/"
-  docker rm -f "$CONTAINER" >/dev/null 2>&1
-
-  echo "   Subindo novos site-packages para o servidor..."
-  lftp -u "$FTP_USER","$FTP_PASS" "ftp://$FTP_HOST" <<EOF
-set ftp:passive-mode on
-set net:timeout 120
-set net:max-retries 3
-mirror --reverse --ignore-time --parallel=4 $BUILD_DIR /virtualenv/scanner/3.9/lib/python3.9/site-packages
-bye
-EOF
+  echo "   Compactando site-packages em tarball (single file)..."
+  SITE_TGZ="/tmp/scanner_sitepackages.tgz"
+  tar -czf "$SITE_TGZ" -C "$BUILD_DIR" .
+  echo "   Enviando tarball ($(du -h "$SITE_TGZ" | cut -f1))..."
+  ftp_put "$SITE_TGZ" "/scanner/scanner_sitepackages.tgz"
+  echo "   Extraindo no servidor via io.php..."
+  io_php "extract_sitepackages" || echo "   !! io.php extract_sitepackages falhou"
+  rm -f "$SITE_TGZ"
   echo "$CURRENT_REQ_HASH" > "$REQ_MARKER"
   echo "   Site-packages atualizados localmente e no servidor."
 else
   echo "   Requirements não mudaram. Pulando upload de site-packages."
 fi
 
-# 3. Upload app files only (never database)
+# ── 3. Upload app files only (never database) ────────────────────────────────
 echo ""
 echo "==> Subindo app para /scanner (código; DB excluído)..."
 APP_MARKER="/tmp/scanner_app_marker"
@@ -184,72 +284,21 @@ if [ -f "$APP_MARKER" ]; then
 fi
 
 if [ "$FORCE_DEPLOY" = true ] || [ "$CURRENT_APP_HASH" != "$PREVIOUS_APP_HASH" ]; then
-  lftp -u "$FTP_USER","$FTP_PASS" "ftp://$FTP_HOST" <<EOF
-set ftp:passive-mode on
-set net:timeout 60
-set net:max-retries 3
-# App only. NUNCA espelhar/apagar/subir o banco de runtime:
-#   scanner.db, scanner.db-wal, scanner.db-shm, qualquer *.db
-# tmp/ de runtime (logs, lock, status) também fica de fora do --delete.
-mirror --reverse --delete --only-newer --parallel=4 --verbose \
-  -X 'scanner.db' -X 'scanner.db-*' -X 'scanner.db*' \
-  -X '*.db' -X '*.db-wal' -X '*.db-shm' \
-  -X 'tmp' -X 'tmp/*' -X 'tmp/**' \
-  -X '*.log' -X '*.lock' \
-  -X 'remote_logs' -X 'remote_logs/**' \
-  -X '__pycache__' -X '__pycache__/**' \
-  $STAGE /scanner
-# Passenger restart (só touch; não mexe no DB)
-mkdir -f /scanner/tmp 2>/dev/null || true
-put $STAGE/tmp/restart.txt -o /scanner/tmp/restart.txt
-bye
-EOF
+  echo "   Compactando app em tarball..."
+  APP_TGZ="/tmp/scanner_app.tgz"
+  tar -czf "$APP_TGZ" -C "$STAGE" .
+  echo "   Enviando tarball ($(du -h "$APP_TGZ" | cut -f1))..."
+  ftp_put "$APP_TGZ" "/scanner/scanner_app.tgz"
+  echo "   Extraindo no servidor via io.php..."
+  io_extract_app || echo "   !! io.php extract_app falhou"
+  rm -f "$APP_TGZ"
   echo "$CURRENT_APP_HASH" > "$APP_MARKER"
   echo "   App files sincronizados (scanner.db intocado no servidor)."
 else
   echo "   App files não mudaram, pulando sincronização."
 fi
 
-# 3b. Upload PHP proxies + symbols.json para o SUBPATH /scanner/ DO DOMÍNIO
-#     (paulista.dev/scanner/): yahoo_chart.php, yahoo_bulk.php, yahoo_probe.php,
-#     yahoo_snapshot.php, warm_cron_status.php e symbols.json (universo
-#     autoritativo do egress). Estes vivem no subpath /scanner/ do docroot
-#     (public_html/scanner/), servidos em https://paulista.dev/scanner/*.php.
-#     O symbols.json DEVE acompanhar symbols_fallback.py: mudanças no universo
-#     de ativos (ex.: delistar RBRF11.SA) exigem reupload deste ficheiro.
-PHP_DEPLOY="/domains/paulista.dev/public_html/scanner"
-PHP_MARKER="/tmp/scanner_php_marker"
-CURRENT_PHP_HASH=$(find php/yahoo_chart.php php/yahoo_bulk.php php/yahoo_probe.php \
-  php/yahoo_snapshot.php php/warm_cron_status.php php/symbols.json -type f \
-  -exec sha1sum {} \; | sort | sha1sum | cut -d' ' -f1)
-PREVIOUS_PHP_HASH=""
-[ -f "$PHP_MARKER" ] && PREVIOUS_PHP_HASH=$(cat "$PHP_MARKER")
-
-if [ "$FORCE_DEPLOY" = true ] || [ "$CURRENT_PHP_HASH" != "$PREVIOUS_PHP_HASH" ]; then
-  echo ""
-  echo "==> Subindo PHP proxies + symbols.json para $PHP_DEPLOY ..."
-  lftp -u "$FTP_USER","$FTP_PASS" "ftp://$FTP_HOST" <<EOF
-set ftp:passive-mode on
-set net:timeout 60
-set net:max-retries 3
-# Apenas os ficheiros conhecidos do subpath — NUNCA apagar o resto do docroot.
-mkdir -p $PHP_DEPLOY
-put php/yahoo_chart.php   -o $PHP_DEPLOY/yahoo_chart.php
-put php/yahoo_bulk.php    -o $PHP_DEPLOY/yahoo_bulk.php
-put php/yahoo_probe.php   -o $PHP_DEPLOY/yahoo_probe.php
-put php/yahoo_snapshot.php -o $PHP_DEPLOY/yahoo_snapshot.php
-put php/warm_cron_status.php -o $PHP_DEPLOY/warm_cron_status.php
-put php/symbols.json      -o $PHP_DEPLOY/symbols.json
-bye
-EOF
-  echo "$CURRENT_PHP_HASH" > "$PHP_MARKER"
-  echo "   PHP proxies + symbols.json sincronizados (docroot intacto)."
-else
-  echo ""
-  echo "==> PHP proxies + symbols.json não mudaram, pulando sincronização."
-fi
-
-# 4. Verify (read-only HTTP — não mexe no DB)
+# ── 4. Verify (read-only HTTP — não mexe no DB) ──────────────────────────────
 echo ""
 echo "==> Verificando API (só leitura)..."
 sleep 2

@@ -40,7 +40,11 @@ a linhagem Streamlit viva sobrevive no branch `streamlit-legacy` / `origin/maste
 - **Módulos framework-agnostic**: [`data_layer.py`](data_layer.py),
   [`symbol_store.py`](symbol_store.py), [`symbols_fallback.py`](symbols_fallback.py)
   — compartilhados com o legado Streamlit, portáveis a 3.9.
-- Deploy: ver [`passenger_README.md`](passenger_README.md). Local: `./run_web.sh` ou
+- Deploy (`deploy.sh`): usa **tarball + PHP extraction** no lugar do antigo mirror
+  FTP (mais rápido). Build de deps em Docker → tar → `ftp_put` → `php/io.php`
+  (`PharData` extract). App files: stage → tar → `ftp_put` → `io.php extract_app`.
+  `php/io.php` é versionado no repo; token lido de `IO_PHP_TOKEN` no `.env`.
+  Ver [`DEPLOY.md`](DEPLOY.md). Local: `./run_web.sh` ou
   `venv39/bin/python app.py`.
 
 ## Aquecimento: local vs. produção (Passenger)
@@ -164,6 +168,10 @@ that throttled/truncated Yahoo responses used to cause.
   fazer push, use o `gh` (já autenticado como `paulistasystems`): `gh auth setup-git`
   seguido de `git push origin master`. Não tente push direto por HTTPS sem token nem por
   SSH (host-key do GitHub não validado neste ambiente).
+- **Nunca use `rm` para ficheiros fora de `/tmp`.** Use `gio trash` no lugar:
+  `gio trash <caminho>`. Arquivos dentro de `/tmp` e subdiretórios podem usar `rm`
+  (`/tmp` é volátil por definição). Esta regra aplica-se a comandos no terminal e
+  scripts executados pelo Claude.
 - **Scripts que parseiam seus próprios argumentos:** ao receber um parâmetro desconhecido,
   devem sair com código não-zero (ex.: `exit 1`) e exibir o `usage`/ajuda — nunca ignorar
   silenciosamente o argumento inválido. (`deploy.sh` e `remote_logs.sh` seguem esse padrão.)

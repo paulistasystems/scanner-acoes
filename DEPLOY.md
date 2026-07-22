@@ -42,28 +42,24 @@ Força upload completo mesmo que nada mudou (útil após problemas).
 ```bash
 brew install lftp curl trash-cli  # macOS
 cp .env.example .env            # preencha FTP_HOST / FTP_USER / FTP_PASS
+./php/generate_io_token.sh      # gera IO_PHP_TOKEN e atualiza .env
 ```
 
 ---
 
-## Como funciona: build.sh + deploy.sh
-
-### `build.sh` - Build de packages Linux
-
-Compila packages compatíveis com Python 3.9 Linux (manylinux x86_64):
-- Download wheels para Python 3.9 Linux
-- Instala em `/tmp/scanner_linux_sitepackages/`
-- Cacheia wheels em `/tmp/scanner_wheels/` (reúso em builds seguintes)
-
-**Resultado**: ~128MB de packages prontos para deploy.
+## Como funciona: deploy.sh
 
 ### `deploy.sh` - Smart deploy
 
-Hash-based comparison para evitar uploads desnecessários:
-- **Hash do build** - Só sobe site-packages se o build mudou
-- **Hash dos arquivos** - Só sobe app files se mudaram
-- **`--only-newer`** - FTP só sobe arquivos mais recentes
-- **`--delete`** - Remove arquivos órfãos no servidor
+Hash-based comparison para evitar uploads desnecessários, e **tarball + PHP
+extraction** no lugar do lento `mirror --reverse` FTP:
+
+- **Site-packages**: build Docker → `tar -czf` → `ftp_put` (1 ficheiro) →
+  `php/io.php?op=extract_sitepackages` (PharData extract no venv remoto).
+- **App files**: stage (cp) → `tar -czf` → `ftp_put` (1 ficheiro) →
+  `php/io.php?op=extract_app` (rmrf de static/ + __pycache__, depois extract).
+- **PHP proxies + symbols.json + io.php**: individual `put` via FTP (são poucos).
+- **Hashes SHA1** de conteúdo para saltar passos quando nada mudou.
 
 ---
 
@@ -103,10 +99,13 @@ curl -s --user "$FTP_USER:$FTP_PASS" \
 
 ## Troubleshooting
 
-- **500 / Internal Server Error** —_deps incompatíveis ou `.env` ausente.
+- **500 / Internal Server Error** — deps incompatíveis ou `.env` ausente.
 - **Restart não pegou** — reenvie `tmp/restart.txt` (seção acima).
 - **Timeout no `/api/scan`** — dispare `/api/warm` e aguarde.
-- **Mirror apagou o DB** — use sync DB (seção acima).
+- **Tarball extract falhou (`io.php`)** — verifique se `IO_PHP_TOKEN` está
+  configurado no servidor (DirectAdmin → PHP Selector → env vars) e no `.env`
+  local. Execute `./php/generate_io_token.sh` para regenerar.
+- **io.php devolve 403** — token incorreto ou não definido no servidor.
 - **Build lento** — wheels são cacheados, builds seguintes são rápidos.
 - **Deploy re-upando tudo** — use `--force` apenas se necessário.
 
@@ -118,11 +117,10 @@ curl -s --user "$FTP_USER:$FTP_PASS" \
 
 ---
 
-## Arquitetura do branch `vanilla-web-scanner`
+## Arquitetura
 
-Este branch é um **paralelo** ao `master`:
 - **Python 3.9** (pinned em `.python-version`)
 - **Flask/WSGI** (sem Streamlit)
-- **Deploy automático** via `build.sh` + `deploy.sh`
+- **Deploy automático** via `deploy.sh` + helpers em `php/io.php`
 - **Sem pandas_ta/numba** (indicadores reimplementados em pandas puro)
 
