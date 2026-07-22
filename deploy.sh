@@ -208,7 +208,7 @@ if [ "$FORCE_DEPLOY" = true ] || [ "$CURRENT_PHP_HASH" != "$PREVIOUS_PHP_HASH" ]
 set ftp:passive-mode on
 set net:timeout 60
 set net:max-retries 3
-mkdir -p $PHP_DEPLOY 2>/dev/null || true
+mkdir -f $PHP_DEPLOY
 put php/yahoo_chart.php   -o $PHP_DEPLOY/yahoo_chart.php
 put php/yahoo_bulk.php    -o $PHP_DEPLOY/yahoo_bulk.php
 put php/yahoo_probe.php   -o $PHP_DEPLOY/yahoo_probe.php
