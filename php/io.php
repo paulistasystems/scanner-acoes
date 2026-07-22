@@ -85,10 +85,8 @@ switch ($op) {
         if ($tgz_rel === '' || $dest_rel === '') {
             p("uso: op=extract_tgz&tgz=rel/to/file.tgz&dest=rel/to/dir"); exit(1);
         }
-        $tgz = $home . $tgz_rel;
-        $dest = $home . $dest_rel;
-        if ($tgz[0] !== '/') $tgz = $home . $tgz;
-        if ($dest[0] !== '/') $dest = $home . $dest;
+        $tgz = ($tgz_rel[0] === '/' ? '' : $home) . $tgz_rel;
+        $dest = ($dest_rel[0] === '/' ? '' : $home) . $dest_rel;
         if (!file_exists($tgz)) { p("ERRO: $tgz ausente"); exit(1); }
         if (!is_dir($dest)) { mkdir($dest, 0755, true); }
         p(">> PharData extract $tgz -> $dest");

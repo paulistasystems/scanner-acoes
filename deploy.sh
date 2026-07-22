@@ -183,15 +183,15 @@ if [ "$FORCE_DEPLOY" = true ]; then
   echo "   Modo force ativado — forçando upload de site-packages e app."
 fi
 
-# ── 1. PHP files (io.php + proxies) + static assets (js/css/html) ──────────
-# Upload PHP proxies, symbols.json, e io.php para o SUBPATH /scanner/ do
-# docroot (public_html/scanner/). O io.php PRECISA estar no ar ANTES dos
-# passos que o usam (extract_sitepackages, extract_app).
+# ── 1. PHP + static assets → tarball via FTP + io.php extract_tgz ──────────
+# Sobe PHP proxies, io.php, symbols.json e assets estáticos (js/css/html)
+# para o docroot do LiteSpeed (public_html/scanner/). Os assets estáticos
+# precisam estar no docroot porque o LiteSpeed retorna 503 para .js servidos
+# via Flask.
 #
-# Também sobe os assets estáticos (js/css/html) para o docroot — o LiteSpeed
-# consegue servir CSS/HTML mas retorna 503 para .js servidos via Flask
-# (send_from_directory/send_static_file). Colocando no docroot, o LiteSpeed
-# serve diretamente sem passar pelo Passenger/Flask.
+# Estratégia: sobe o io.php primeiro (necessário para os extract steps),
+# depois empacota o resto num tarball e extrai via io.php — 2 uploads + 1
+# curl em vez de 11 lftp put individuais. Hash guard evita re-upload.
 PHP_DEPLOY="/domains/paulista.dev/public_html/scanner"
 PHP_MARKER="/tmp/scanner_php_marker"
 CURRENT_PHP_HASH=$(find php/yahoo_chart.php php/yahoo_bulk.php php/yahoo_probe.php \
@@ -203,31 +203,42 @@ PREVIOUS_PHP_HASH=""
 
 if [ "$FORCE_DEPLOY" = true ] || [ "$CURRENT_PHP_HASH" != "$PREVIOUS_PHP_HASH" ]; then
   echo ""
-  echo "==> 1. Subindo PHP proxies + static assets + symbols.json + io.php para $PHP_DEPLOY ..."
+  echo "==> 1. Enviando PHP + static assets para $PHP_DEPLOY ..."
+  # 1a. Sobe io.php sozinho (precisa estar no ar antes do extract)
+  echo "   1a. io.php individual..."
   lftp -u "$FTP_USER","$FTP_PASS" "ftp://$FTP_HOST" <<EOF
 set ftp:passive-mode on
 set net:timeout 60
 set net:max-retries 3
 mkdir -f $PHP_DEPLOY
-put php/yahoo_chart.php   -o $PHP_DEPLOY/yahoo_chart.php
-put php/yahoo_bulk.php    -o $PHP_DEPLOY/yahoo_bulk.php
-put php/yahoo_probe.php   -o $PHP_DEPLOY/yahoo_probe.php
-put php/yahoo_snapshot.php -o $PHP_DEPLOY/yahoo_snapshot.php
-put php/warm_cron_status.php -o $PHP_DEPLOY/warm_cron_status.php
-put php/io.php            -o $PHP_DEPLOY/io.php
-put php/symbols.json      -o $PHP_DEPLOY/symbols.json
-put static/app.js         -o $PHP_DEPLOY/app.js
-put static/intraday.js    -o $PHP_DEPLOY/intraday.js
-put static/style.css      -o $PHP_DEPLOY/style.css
-put static/index.html     -o $PHP_DEPLOY/index.html
-put static/intraday.html  -o $PHP_DEPLOY/intraday.html
+put php/io.php -o $PHP_DEPLOY/io.php
 bye
 EOF
+  # 1b. Stage flat (sem io.php) → tarball → ftp_put → io.php extract_tgz
+  echo "   1b. Tarball dos demais assets -> io.php extract_tgz..."
+  PHP_STAGE=$(mktemp -d)
+  for f in php/yahoo_chart.php php/yahoo_bulk.php php/yahoo_probe.php \
+    php/yahoo_snapshot.php php/warm_cron_status.php php/symbols.json \
+    static/app.js static/intraday.js static/style.css static/index.html static/intraday.html; do
+    cp -p "$f" "$PHP_STAGE/$(basename "$f")"
+  done
+  PHP_TGZ="/tmp/scanner_php_assets.tgz"
+  cd "$PHP_STAGE" && find . -mindepth 1 -maxdepth 1 | tar -czf "$PHP_TGZ" -T - && cd - >/dev/null
+  rm -rf "$PHP_STAGE"
+  if [ -s "$PHP_TGZ" ]; then
+    ftp_put "$PHP_TGZ" "/scanner/scanner_php_assets.tgz"
+    io_php "extract_tgz" "tgz=scanner_php_assets.tgz" "dest=${PHP_DEPLOY}"
+    rm -f "$PHP_TGZ"
+    echo "   Tarball extraído em $PHP_DEPLOY"
+  else
+    rm -f "$PHP_TGZ"
+    echo "   Tarball vazio (só io.php mudou), pulando extract."
+  fi
   echo "$CURRENT_PHP_HASH" > "$PHP_MARKER"
-  echo "   PHP proxies + static assets + symbols.json + io.php sincronizados (docroot)."
+  echo "   PHP + static assets sincronizados (docroot)."
 else
   echo ""
-  echo "==> 1. PHP proxies + static assets + symbols.json + io.php não mudaram, pulando."
+  echo "==> 1. PHP + static assets não mudaram, pulando."
 fi
 
 # ── 2. Build and Upload site-packages ────────────────────────────────────────
