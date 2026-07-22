@@ -258,7 +258,7 @@ if [ "$FORCE_DEPLOY" = true ] || [ "$CURRENT_REQ_HASH" != "$PREVIOUS_REQ_HASH" ]
 
   echo "   Compactando site-packages em tarball (single file)..."
   SITE_TGZ="/tmp/scanner_sitepackages.tgz"
-  tar -czf "$SITE_TGZ" -C "$BUILD_DIR" .
+  cd "$BUILD_DIR" && find . -mindepth 1 -maxdepth 1 | tar -czf "$SITE_TGZ" -T - && cd - >/dev/null
   echo "   Enviando tarball ($(du -h "$SITE_TGZ" | cut -f1))..."
   ftp_put "$SITE_TGZ" "/scanner/scanner_sitepackages.tgz"
   echo "   Extraindo no servidor via io.php..."
@@ -286,7 +286,7 @@ fi
 if [ "$FORCE_DEPLOY" = true ] || [ "$CURRENT_APP_HASH" != "$PREVIOUS_APP_HASH" ]; then
   echo "   Compactando app em tarball..."
   APP_TGZ="/tmp/scanner_app.tgz"
-  tar -czf "$APP_TGZ" -C "$STAGE" .
+  cd "$STAGE" && find . -mindepth 1 -maxdepth 1 | tar -czf "$APP_TGZ" -T - && cd - >/dev/null
   echo "   Enviando tarball ($(du -h "$APP_TGZ" | cut -f1))..."
   ftp_put "$APP_TGZ" "/scanner/scanner_app.tgz"
   echo "   Extraindo no servidor via io.php..."
