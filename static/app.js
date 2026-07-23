@@ -346,7 +346,7 @@ function setupEventListeners() {
     const btnRetryFailures = document.getElementById('btn-retry-failures');
     if (btnRetryFailures) {
         btnRetryFailures.addEventListener('click', async () => {
-            if (!confirm('Deseja retentar todos os ativos com falha?\n\nIsso limpará o registro de falhas e forçará o download imediato dos dados.')) return;
+            if (!confirm('Deseja retentar todos os ativos com falha?\n\nIsso limpará o registro de falhas, baixará os dados novamente e executará os scanners automaticamente.')) return;
             btnRetryFailures.disabled = true;
             btnRetryFailures.textContent = '⏳ Retentando...';
             try {
@@ -354,6 +354,10 @@ function setupEventListeners() {
                 await triggerWarm();
                 await loadFailures();
                 updateStatus();
+                btnRetryFailures.textContent = '⏳ Aguardando warm...';
+                await pollWarmDone();
+                btnRetryFailures.textContent = '⏳ Executando scanners...';
+                await startup();
             } catch (e) {
                 console.error('Erro ao retentar falhas', e);
                 alert('Erro ao retentar falhas. Tente novamente.');
@@ -363,6 +367,8 @@ function setupEventListeners() {
             }
         });
     }
+
+
 }
 
 function setRunAllButton(enabled) {
@@ -483,6 +489,20 @@ function updateStatusFrom(data) {
 async function triggerWarm() {
     await fetch(`${BASE}/api/warm`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ intervals: WARM_INTERVALS }) });
     updateStatus();
+}
+
+async function pollWarmDone() {
+    for (let i = 0; i < 600; i++) {
+        await new Promise(r => setTimeout(r, 1000));
+        try {
+            const res = await fetch(`${BASE}/api/status`);
+            const data = await res.json();
+            updateStatusFrom(data);
+            const wp = data.warm_progress;
+            if (!data.warming && wp && wp.finished_at) return;
+            if (!data.warming && wp && !wp.running && wp.done >= wp.total) return;
+        } catch (_) {}
+    }
 }
 
 async function refreshDB() {
