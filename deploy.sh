@@ -210,7 +210,7 @@ fi
 # Estratégia: sobe o io.php primeiro (necessário para os extract steps),
 # depois empacota o resto num tarball e extrai via io.php — 2 uploads + 1
 # curl em vez de 11 lftp put individuais. Hash guard evita re-upload.
-PHP_DEPLOY="/domains/paulista.dev/public_html/scanner"
+PHP_DEPLOY="domains/paulista.dev/public_html/scanner"
 PHP_MARKER="/tmp/scanner_php_marker"
 CURRENT_PHP_HASH=$(find php/yahoo_chart.php php/yahoo_bulk.php php/yahoo_probe.php \
   php/yahoo_snapshot.php php/warm_cron_status.php php/io.php php/symbols.json \
@@ -228,7 +228,7 @@ if [ "$FORCE_DEPLOY" = true ] || [ "$CURRENT_PHP_HASH" != "$PREVIOUS_PHP_HASH" ]
 set ftp:passive-mode on
 set net:timeout 60
 set net:max-retries 3
-mkdir -f $PHP_DEPLOY
+mkdir -p $PHP_DEPLOY
 put php/io.php -o $PHP_DEPLOY/io.php
 bye
 EOF

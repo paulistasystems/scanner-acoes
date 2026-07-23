@@ -47,7 +47,11 @@ function rmrf_php($dir) {
 
 function _tar_extract($tgz, $dest) {
     if (!file_exists($tgz)) { p("ERRO: $tgz ausente"); exit(1); }
-    if (!is_dir($dest)) { mkdir($dest, 0755, true); }
+    if (!is_dir($dest)) {
+        $ok = mkdir($dest, 0755, true);
+        if (!$ok) { p("ERRO: nao criou diretorio $dest"); exit(1); }
+    }
+    if (!is_writable($dest)) { p("ERRO: $dest sem permissao de escrita"); exit(1); }
     p(">> phar extract $tgz -> $dest");
     try {
         $phar = new PharData($tgz);
@@ -55,17 +59,7 @@ function _tar_extract($tgz, $dest) {
         p("EXTRAIDO OK");
     } catch (Exception $e) {
         p("ERRO PharData: " . $e->getMessage());
-        // fallback: tenta tar via exec (caso PharData falhe por symlinks etc)
-        p(">> fallback: tar -xzf " . basename($tgz) . " -C " . basename($dest));
-        $cmd = "tar -xzf " . escapeshellarg($tgz) . " -C " . escapeshellarg($dest) . " 2>&1";
-        exec($cmd, $out, $rc);
-        foreach ($out as $l) p($l);
-        if ($rc === 0) {
-            p("EXTRAIDO OK (fallback)");
-        } else {
-            p("ERRO extract (tar rc=$rc)");
-            exit(1);
-        }
+        exit(1);
     }
 }
 
