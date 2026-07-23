@@ -315,7 +315,7 @@ fi
 if [ "$FORCE_DEPLOY" = true ] || [ "$CURRENT_APP_HASH" != "$PREVIOUS_APP_HASH" ]; then
   echo "   Compactando app em tarball..."
   APP_TGZ="/tmp/scanner_app.tgz"
-  cd "$STAGE" && tar -czf "$APP_TGZ" . && cd - >/dev/null
+  cd "$STAGE" && find . -mindepth 1 -maxdepth 1 | tar -czf "$APP_TGZ" -T - && cd - >/dev/null
   echo "   Enviando tarball ($(du -h "$APP_TGZ" | cut -f1))..."
   ftp_put "$APP_TGZ" "/scanner/scanner_app.tgz"
   echo "   Extraindo no servidor via io.php..."

@@ -531,3 +531,4 @@ if __name__ == '__main__':
         print(f"startup prewarm falhou (não fatal): {e!r}")
     port = int(os.environ.get('PORT', 5001))
     app.run(debug=True, use_reloader=False, port=port)
+

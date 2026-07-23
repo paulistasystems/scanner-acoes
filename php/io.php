@@ -9,6 +9,7 @@
 //   extract_tgz           — extrai .tar.gz genérico (tgz=, dest=)
 //   extract_app           — extrai scanner_app.tgz em /scanner/ (rmrf prévio)
 //   rmrf                  — remove diretório recursivamente (path=)
+//   mkdir                 — cria diretório (path=)
 //   ls                    — lista diretório (path=)
 //   shell                 — executa comando (cmd=) — WAF pode 403
 //   ping                  — sanity check
@@ -47,15 +48,24 @@ function rmrf_php($dir) {
 function _tar_extract($tgz, $dest) {
     if (!file_exists($tgz)) { p("ERRO: $tgz ausente"); exit(1); }
     if (!is_dir($dest)) { mkdir($dest, 0755, true); }
-    p(">> tar -xzf $tgz -C $dest");
-    $cmd = "tar -xzf " . escapeshellarg($tgz) . " -C " . escapeshellarg($dest) . " 2>&1";
-    exec($cmd, $out, $rc);
-    foreach ($out as $l) p($l);
-    if ($rc === 0) {
+    p(">> phar extract $tgz -> $dest");
+    try {
+        $phar = new PharData($tgz);
+        $phar->extractTo($dest, null, true);
         p("EXTRAIDO OK");
-    } else {
-        p("ERRO extract (tar rc=$rc)");
-        exit(1);
+    } catch (Exception $e) {
+        p("ERRO PharData: " . $e->getMessage());
+        // fallback: tenta tar via exec (caso PharData falhe por symlinks etc)
+        p(">> fallback: tar -xzf " . basename($tgz) . " -C " . basename($dest));
+        $cmd = "tar -xzf " . escapeshellarg($tgz) . " -C " . escapeshellarg($dest) . " 2>&1";
+        exec($cmd, $out, $rc);
+        foreach ($out as $l) p($l);
+        if ($rc === 0) {
+            p("EXTRAIDO OK (fallback)");
+        } else {
+            p("ERRO extract (tar rc=$rc)");
+            exit(1);
+        }
     }
 }
 
@@ -113,10 +123,26 @@ switch ($op) {
                 rmrf_php($d);
             }
         }
+        // Garante que static/ existe (tar pode falhar se houve ._static residual)
+        $static_dir = $dest . 'static';
+        if (!is_dir($static_dir)) {
+            @unlink($static_dir); // remove Apple Double se existir
+            mkdir($static_dir, 0755, true);
+            p(">> mkdir $static_dir");
+        }
         _tar_extract($tgz, $dest);
         // Copia restart.txt do extract para tmp/ (se veio solto na raiz)
         if (is_file($dest . 'restart.txt') && is_dir($dest . 'tmp')) {
             rename($dest . 'restart.txt', $dest . 'tmp/restart.txt');
+        }
+        break;
+
+    case 'mkdir':
+        if (!is_dir($path)) {
+            mkdir($path, 0755, true);
+            p("CRIADO OK");
+        } else {
+            p("JA EXISTE");
         }
         break;
 
@@ -172,6 +198,6 @@ switch ($op) {
 
     default:
         p("op desconhecido: $op");
-        p("ops: ping, ls, rmrf, shell, extract_sitepackages, extract_tgz, extract_app, dir, cat");
+        p("ops: ping, ls, rmrf, mkdir, shell, extract_sitepackages, extract_tgz, extract_app, dir, cat");
         exit(1);
 }
