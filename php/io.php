@@ -44,6 +44,21 @@ function rmrf_php($dir) {
     @rmdir($dir);
 }
 
+function _tar_extract($tgz, $dest) {
+    if (!file_exists($tgz)) { p("ERRO: $tgz ausente"); exit(1); }
+    if (!is_dir($dest)) { mkdir($dest, 0755, true); }
+    p(">> tar -xzf $tgz -C $dest");
+    $cmd = "tar -xzf " . escapeshellarg($tgz) . " -C " . escapeshellarg($dest) . " 2>&1";
+    exec($cmd, $out, $rc);
+    foreach ($out as $l) p($l);
+    if ($rc === 0) {
+        p("EXTRAIDO OK");
+    } else {
+        p("ERRO extract (tar rc=$rc)");
+        exit(1);
+    }
+}
+
 $op = $_GET['op'] ?? '';
 $path = $_GET['path'] ?? '';
 if ($path !== '' && $path[0] !== '/') {
@@ -57,25 +72,17 @@ switch ($op) {
         $dest = $home . 'virtualenv/scanner/3.9/lib/python3.9/site-packages/';
         if (!file_exists($tgz)) { p("ERRO: $tgz ausente"); exit(1); }
         if (!is_dir($dest)) { mkdir($dest, 0755, true); }
-        p(">> PharData extract $tgz -> $dest");
-        try {
-            $phar = new PharData($tgz);
-            $phar->extractTo($dest, null, true);
-            p("EXTRAIDO OK");
-            // Remove .so aarch64 que porventura tenham ficado
-            $removed = 0;
-            $rii = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($dest, FilesystemIterator::SKIP_DOTS));
-            foreach ($rii as $f) {
-                if ($f->isFile() && strpos($f->getFilename(), 'aarch64') !== false) {
-                    @unlink($f->getPathname());
-                    $removed++;
-                }
+        _tar_extract($tgz, $dest);
+        // Remove .so aarch64 que porventura tenham ficado
+        $removed = 0;
+        $rii = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($dest, FilesystemIterator::SKIP_DOTS));
+        foreach ($rii as $f) {
+            if ($f->isFile() && strpos($f->getFilename(), 'aarch64') !== false) {
+                @unlink($f->getPathname());
+                $removed++;
             }
-            p("limpeza aarch64: $removed ficheiro(s) removido(s)");
-        } catch (Exception $e) {
-            p("ERRO extract: " . $e->getMessage());
-            exit(1);
         }
+        p("limpeza aarch64: $removed ficheiro(s) removido(s)");
         break;
 
     case 'extract_tgz':
@@ -87,18 +94,7 @@ switch ($op) {
         }
         $tgz = ($tgz_rel[0] === '/' ? '' : $home) . $tgz_rel;
         $dest = ($dest_rel[0] === '/' ? '' : $home) . $dest_rel;
-        if (!file_exists($tgz)) { p("ERRO: $tgz ausente"); exit(1); }
-        if (!is_dir($dest)) { mkdir($dest, 0755, true); }
-        p(">> tar -xzf $tgz -C $dest");
-        $cmd = "tar -xzf " . escapeshellarg($tgz) . " -C " . escapeshellarg($dest) . " 2>&1";
-        exec($cmd, $out, $rc);
-        foreach ($out as $l) p($l);
-        if ($rc === 0) {
-            p("EXTRAIDO OK");
-        } else {
-            p("ERRO extract (tar rc=$rc)");
-            exit(1);
-        }
+        _tar_extract($tgz, $dest);
         break;
 
     case 'extract_app':
@@ -117,18 +113,10 @@ switch ($op) {
                 rmrf_php($d);
             }
         }
-        p(">> PharData extract $tgz -> $dest");
-        try {
-            $phar = new PharData($tgz);
-            $phar->extractTo($dest, null, true);
-            p("EXTRAIDO OK");
-            // Copia restart.txt do extract para tmp/ (se veio solto na raiz)
-            if (is_file($dest . 'restart.txt') && is_dir($dest . 'tmp')) {
-                rename($dest . 'restart.txt', $dest . 'tmp/restart.txt');
-            }
-        } catch (Exception $e) {
-            p("ERRO extract: " . $e->getMessage());
-            exit(1);
+        _tar_extract($tgz, $dest);
+        // Copia restart.txt do extract para tmp/ (se veio solto na raiz)
+        if (is_file($dest . 'restart.txt') && is_dir($dest . 'tmp')) {
+            rename($dest . 'restart.txt', $dest . 'tmp/restart.txt');
         }
         break;
 
