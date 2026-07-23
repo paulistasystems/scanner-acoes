@@ -16,6 +16,9 @@ scanner.db
 scanner.db-shm
 scanner.db-wal
 
+# Deploy cache (artefato gerado pelo deploy.sh)
+.deploy_cache
+
 # Runtime: logs do warm_cron, restart.txt do Passenger, etc.
 tmp/
 
