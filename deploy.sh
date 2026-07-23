@@ -47,8 +47,15 @@ io_php() {
   for p in "$@"; do
     args+=(--data-urlencode "$p")
   done
-  curl "${args[@]}"
-  echo
+  local output
+  output=$(curl "${args[@]}")
+  local rc=$?
+  echo "$output"
+  if echo "$output" | grep -q '^ERRO'; then
+    echo "   !! io.php falhou" >&2
+    return 1
+  fi
+  return $rc
 }
 
 io_extract_tgz() {
