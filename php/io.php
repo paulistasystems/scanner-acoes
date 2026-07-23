@@ -89,13 +89,14 @@ switch ($op) {
         $dest = ($dest_rel[0] === '/' ? '' : $home) . $dest_rel;
         if (!file_exists($tgz)) { p("ERRO: $tgz ausente"); exit(1); }
         if (!is_dir($dest)) { mkdir($dest, 0755, true); }
-        p(">> PharData extract $tgz -> $dest");
-        try {
-            $phar = new PharData($tgz);
-            $phar->extractTo($dest, null, true);
+        p(">> tar -xzf $tgz -C $dest");
+        $cmd = "tar -xzf " . escapeshellarg($tgz) . " -C " . escapeshellarg($dest) . " 2>&1";
+        exec($cmd, $out, $rc);
+        foreach ($out as $l) p($l);
+        if ($rc === 0) {
             p("EXTRAIDO OK");
-        } catch (Exception $e) {
-            p("ERRO extract: " . $e->getMessage());
+        } else {
+            p("ERRO extract (tar rc=$rc)");
             exit(1);
         }
         break;
