@@ -342,6 +342,26 @@ function setupEventListeners() {
             }
         });
     }
+
+    const btnRetryFailures = document.getElementById('btn-retry-failures');
+    if (btnRetryFailures) {
+        btnRetryFailures.addEventListener('click', async () => {
+            if (!confirm('Deseja retentar todos os ativos com falha?\n\nIsso limpará o registro de falhas e forçará uma nova tentativa de download na próxima atualização.')) return;
+            btnRetryFailures.disabled = true;
+            btnRetryFailures.textContent = '⏳ Retentando...';
+            try {
+                await fetch(`${BASE}/api/retry_failures`, { method: 'POST' });
+                await refreshDB();
+                await loadFailures();
+            } catch (e) {
+                console.error('Erro ao retentar falhas', e);
+                alert('Erro ao retentar falhas. Tente novamente.');
+            } finally {
+                btnRetryFailures.disabled = false;
+                btnRetryFailures.textContent = '🔄 Retentar Todas';
+            }
+        });
+    }
 }
 
 function setRunAllButton(enabled) {

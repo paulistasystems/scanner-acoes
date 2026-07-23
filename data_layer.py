@@ -743,6 +743,20 @@ def clear_blacklist():
         conn.commit()
 
 
+def retry_failures():
+    """Limpa o registro de falhas e invalida o fill_state para que todos os
+    símbolos que falharam sejam retentados na próxima aquisição."""
+    _ensure_schema()
+    with _lock:
+        conn = _connect()
+        symbols = [r[0] for r in conn.execute("SELECT DISTINCT symbol FROM fetch_failures").fetchall()]
+        conn.execute("DELETE FROM fetch_failures")
+        for s in symbols:
+            conn.execute("DELETE FROM fill_state WHERE symbol=?", (s,))
+        conn.commit()
+    return len(symbols)
+
+
 def delist_symbol(symbol):
     """Delisting LÓGICO e reversível: adiciona o símbolo à blacklist (que já
     bloqueia aquisição/análise em data_ready/blacklist_missing) e limpa o

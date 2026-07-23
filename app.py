@@ -419,6 +419,11 @@ def api_refresh():
     invalidate_scan_cache()
     return jsonify({"success": True})
 
+@app.route('/api/retry_failures', methods=['POST'])
+def api_retry_failures():
+    count = data_layer.retry_failures()
+    return jsonify({"success": True, "retried": count})
+
 @app.route('/api/bars')
 def api_bars():
     symbol = request.args.get('symbol')
