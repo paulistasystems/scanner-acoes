@@ -782,6 +782,9 @@ async function loadFailures() {
                 await triggerWarm();
                 await loadFailures();
                 updateStatus();
+                btn.textContent = '⏳ Warm...';
+                await pollWarmDone();
+                await startup();
             } catch (e) {
                 console.error(`Erro ao retentar ${sym}`, e);
                 alert(`Erro ao retentar ${sym}. Tente novamente.`);
