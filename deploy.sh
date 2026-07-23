@@ -283,7 +283,7 @@ if [ "$FORCE_DEPLOY" = true ] || [ "$CURRENT_REQ_HASH" != "$PREVIOUS_REQ_HASH" ]
     -v "$PWD/requirements-py39.txt":/req.txt:ro \
     -v "$BUILD_DIR":/wheels \
     python:3.9-slim-bookworm \
-    sh -c 'pip install -r /req.txt --target /wheels --no-cache-dir && echo DONE'
+    sh -c 'python -m pip install --upgrade pip -q && pip install -r /req.txt --target /wheels --no-cache-dir && echo DONE'
 
   echo "   Compactando site-packages em tarball (single file)..."
   SITE_TGZ="/tmp/scanner_sitepackages.tgz"
