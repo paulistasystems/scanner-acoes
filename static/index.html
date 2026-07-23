@@ -11,7 +11,7 @@
             var i = p.lastIndexOf('/');
             return (i >= 0 ? p.slice(0, i + 1) : '/');
         })();
-        document.write('<link rel="stylesheet" href="' + window.APP_BASE + 'style.css">');
+        document.write('<link rel="stylesheet" href="' + window.APP_BASE + 'style.css?v=20260723">');
     </script>
 </head>
 <body>
@@ -141,7 +141,7 @@
     </main>
 
     <script>
-        document.write('<script src="' + window.APP_BASE + 'app.js"><\/script>');
+        document.write('<script src="' + window.APP_BASE + 'app.js?v=20260723"><\/script>');
     </script>
 </body>
 </html>
