@@ -12,6 +12,16 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$SCRIPT_DIR"
 
+# Git clean check — aborta se houver algo não commitado ou untracked
+if ! git diff --quiet HEAD 2>/dev/null; then
+  echo "ERRO: há alterações não commitadas no repositório. Commit ou stash antes de deployar." >&2
+  exit 1
+fi
+if [ -n "$(git ls-files --others --exclude-standard)" ]; then
+  echo "ERRO: há ficheiros untracked no repositório. Commit, stash ou .gitignore antes de deployar." >&2
+  exit 1
+fi
+
 # Load credentials
 set -a; . ./.env; set +a
 echo "Deploy -> $FTP_USER@$FTP_HOST"
