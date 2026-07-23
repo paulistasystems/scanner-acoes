@@ -45,6 +45,16 @@ cp .env.example .env            # preencha FTP_HOST / FTP_USER / FTP_PASS
 ./php/generate_io_token.sh      # gera IO_PHP_TOKEN e atualiza .env
 ```
 
+### ⚠️ SCANNER_CHART_URL (Egress Yahoo)
+
+O `data_layer` busca candles do Yahoo via **proxy PHP** (contorna o crumb 401 do yfinance no IP do servidor). O `deploy.sh` **sempre fixa** este valor para produção:
+
+```
+SCANNER_CHART_URL=https://paulista.dev/scanner/yahoo_chart.php
+```
+
+O `.env` local pode conter qualquer valor (ex.: `http://php:8008/yahoo_chart.php` para Docker, ou vazio para Yahoo direto em dev). O deploy **sobrescreve** para a URL pública — nunca deployar com `127.0.0.1:8008` ou outro endereço local, senão todo o aquecimento falha com `Connection refused`.
+
 ---
 
 ## Como funciona: deploy.sh
@@ -83,24 +93,24 @@ extraction** no lugar do lento `mirror --reverse` FTP:
 
 ---
 
-## Restart manual do Passenger
+## Restart do Passenger
 
-O `deploy.sh` já inclui `tmp/restart.txt` no stage — o Passenger recarrega
-automaticamente na próxima request. Para forçar à parte:
+O `tmp/restart.txt` via FTP **não funciona** neste ambiente (LiteSpeed/Passenger
+ignora). O restart deve ser feito pelo **DirectAdmin**:
 
-```bash
-set -a; . ./.env; set +a
-echo "$(date)" > /tmp/restart.txt
-curl -s --user "$FTP_USER:$FTP_PASS" \
-  -T /tmp/restart.txt "ftp://$FTP_HOST/scanner/tmp/restart.txt"
-```
+1. Acessar o painel DirectAdmin do domínio `paulista.dev`
+2. Ir em **Account Manager** → **PHP Selector** (ou **Setup Python App**)
+3. Clicar em **Stop** e depois **Start**
+
+O `deploy.sh` inclui `tmp/restart.txt` no stage por precaução, mas não confie nele.
 
 ---
 
 ## Troubleshooting
 
 - **500 / Internal Server Error** — deps incompatíveis ou `.env` ausente.
-- **Restart não pegou** — reenvie `tmp/restart.txt` (seção acima).
+- **852 falhas · 0% preenchido** — `SCANNER_CHART_URL` aponta para `127.0.0.1:8008` (Docker) em vez do proxy público. Refaça o deploy (que fixa a URL) ou corrija manualmente no `/home/paulista/scanner/.env` remoto.
+- **Restart não pegou** — `tmp/restart.txt` não funciona neste ambiente. Faça Stop/Start no DirectAdmin.
 - **Timeout no `/api/scan`** — dispare `/api/warm` e aguarde.
 - **Tarball extract falhou (`io.php`)** — verifique se `IO_PHP_TOKEN` está
   configurado no servidor (DirectAdmin → PHP Selector → env vars) e no `.env`

@@ -181,6 +181,12 @@ async function runSingle(scanner) {
         url += `&symbols=${encodeURIComponent(customSymbols)}`;
     }
 
+    // Passa o percentual de risco selecionado
+    const riskPct = document.getElementById('risk-pct-selector')?.value;
+    if (riskPct) {
+        url += `&risk_pct=${encodeURIComponent(riskPct)}`;
+    }
+
     try {
         const res = await fetch(url);
         const data = await res.json();

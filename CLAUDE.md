@@ -40,11 +40,11 @@ a linhagem Streamlit viva sobrevive no branch `streamlit-legacy` / `origin/maste
 - **Módulos framework-agnostic**: [`data_layer.py`](data_layer.py),
   [`symbol_store.py`](symbol_store.py), [`symbols_fallback.py`](symbols_fallback.py)
   — compartilhados com o legado Streamlit, portáveis a 3.9.
-- Deploy (`deploy.sh`): usa **tarball + PHP extraction** no lugar do antigo mirror
-  FTP (mais rápido). Build de deps em Docker → tar → `ftp_put` → `php/io.php`
-  (`PharData` extract). App files: stage → tar → `ftp_put` → `io.php extract_app`.
-  `php/io.php` é versionado no repo; token lido de `IO_PHP_TOKEN` no `.env`.
-  Ver [`DEPLOY.md`](DEPLOY.md). Local: `./run_web.sh` ou
+- **Deploy**: use `./deploy.sh`. O script **sempre fixa `SCANNER_CHART_URL`**
+  para a URL pública de produção (`https://paulista.dev/scanner/yahoo_chart.php`),
+  mesmo que o `.env` local tenha outro valor (Docker/vazio). Nunca deployar
+  manualmente um `.env` com `127.0.0.1:8008` — causa 852 falhas em lote.
+  Ver [`DEPLOY.md`](DEPLOY.md) para fluxo completo. Local: `./run_web.sh` ou
   `venv39/bin/python app.py`.
 
 ## Aquecimento: local vs. produção (Passenger)
@@ -159,10 +159,12 @@ that throttled/truncated Yahoo responses used to cause.
 - **Mudanças no app remoto (`paulista.dev/scanner`, Phusion Passenger) — deploy e
   restart automatizados pelo Claude.** O pipeline de deploy está estável: o Claude pode
   subir arquivos ao servidor via FTP (deploy de `app.py`/`data_layer.py`/`.env`/PHP/JS/CSS/HTML)
-  e reiniciar o app escrevendo `tmp/restart.txt` (touch no app root `/home/paulista/scanner/`),
   sem precisar perguntar ao usuário antes de cada mudança. Checagens só-leitura
   (`curl /api/status`, `/api/bars`, baixar `stderr.log`, listar diretórios via FTP)
-  também seguem liberadas. Sempre confirme ao usuário após o deploy/restart concluído.
+  também seguem liberadas. Sempre confirme ao usuário após o deploy concluído.
+  **Restart:** `tmp/restart.txt` via FTP **não funciona** (o Passenger ignora).
+  O restart deve ser feito pelo **DirectAdmin** (painel → "Stop" + "Start" do app).
+  Peça ao usuário para fazer o restart manual pelo DirectAdmin após deploy.
 - **Desenvolvimento e Branches:** Trabalhe e commite diretamente na branch `master` (branch padrão) deste repositório sem a necessidade de criar branches temporárias/intermediárias, a menos que o usuário instrua explicitamente o contrário.
 - **Push via `gh`:** o git remoto é HTTPS e não tem credencial armazenada no shell. Para
   fazer push, use o `gh` (já autenticado como `paulistasystems`): `gh auth setup-git`

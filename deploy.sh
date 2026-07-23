@@ -77,6 +77,17 @@ cp -p static/* "$STAGE/static/"
 cp -p requirements-py39.txt .python-version .env "$STAGE/"
 date > "$STAGE/tmp/restart.txt"
 
+# Fixa SCANNER_CHART_URL para a URL de produção — NUNCA deployar com
+# http://127.0.0.1:8008 (Docker) ou outro valor local. Isto já causou
+# "852 falhas · 0% preenchido" em produção quando o .env local estava
+# contaminado com a URL do Docker (docker-compose.yml / Dockerfile.*).
+# Ver .env.example para contexto.
+if grep -q '^SCANNER_CHART_URL=' "$STAGE/.env"; then
+  sed -i 's|^SCANNER_CHART_URL=.*|SCANNER_CHART_URL=https://paulista.dev/scanner/yahoo_chart.php|' "$STAGE/.env"
+else
+  echo 'SCANNER_CHART_URL=https://paulista.dev/scanner/yahoo_chart.php' >> "$STAGE/.env"
+fi
+
 # Guarda: se por engano houver .db no stage, aborta
 if find "$STAGE" -type f \( -name '*.db' -o -name 'scanner.db*' \) | grep -q .; then
   echo "ERRO: stage contém ficheiro de base de dados — abortando deploy." >&2

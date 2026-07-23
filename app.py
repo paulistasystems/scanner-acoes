@@ -127,6 +127,13 @@ SCANNERS_REGISTRY = {
         "uses_profile": False,
         "uses_symbols": True,
         "group": "intraday"
+    },
+    "sinal_intraday_24jul": {
+        "name": "24 de Julho Intraday — BOAC34 + A1MD34",
+        "func": scanners_core.sinal_intraday_24jul,
+        "uses_profile": False,
+        "uses_symbols": False,
+        "group": "intraday"
     }
 }
 
@@ -259,6 +266,9 @@ def api_scan():
                     df = s["func"](ativos)
                 else:
                     df = s["func"](None)
+            elif scanner_id == "sinal_intraday_24jul":
+                risk_pct = float(request.args.get('risk_pct', 1.0))
+                df = s["func"](risk_pct=risk_pct)
             else:
                 df = s["func"](ativos)
                 

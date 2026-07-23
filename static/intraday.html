@@ -49,6 +49,17 @@
                 <input type="text" id="custom-symbols-input" placeholder="PETR4.SA, VALE3.SA, BBDC4.SA..." style="width: 100%; max-width: 500px; padding: 8px; border-radius: 4px; border: 1px solid #555; background: #222; color: #fff;">
             </div>
 
+            <div id="risk-controls" style="margin-top: 15px;">
+                <h3 class="config-title">Risco por Trade (% do capital)</h3>
+                <select id="risk-pct-selector" style="padding: 8px; border-radius: 4px; border: 1px solid #555; background: #222; color: #fff; font-size: 14px;">
+                    <option value="0.5">0.5% — Conservador</option>
+                    <option value="1.0" selected>1.0% — Moderado</option>
+                    <option value="1.5">1.5% — Agressivo</option>
+                    <option value="2.0">2.0% — Alto Risco</option>
+                </select>
+                <span id="risk-display" style="margin-left: 10px; color: #aaa; font-size: 13px;">Capital: R$ 100.000 → Risco: R$ 1.000</span>
+            </div>
+
             <!-- Fake exclude logic just so app.js doesn't crash if it tries to read the checkbox -->
             <input type="checkbox" id="cb-exclude-failures" style="display: none;">
 
@@ -85,6 +96,19 @@
 
     <script>
         document.write('<script src="' + window.APP_BASE + 'intraday.js"><\/script>');
+    </script>
+    <script>
+        // Atualiza o display de risco ao mudar o seletor
+        var riskSel = document.getElementById('risk-pct-selector');
+        function updateRiskDisplay() {
+            var pct = parseFloat(riskSel.value);
+            var capital = 100000;
+            var risco = capital * pct / 100;
+            document.getElementById('risk-display').innerText =
+                'Capital: R$ ' + capital.toLocaleString('pt-BR') + ' → Risco: R$ ' + risco.toLocaleString('pt-BR', {minimumFractionDigits: 0, maximumFractionDigits: 0});
+        }
+        riskSel.addEventListener('change', updateRiskDisplay);
+        updateRiskDisplay();
     </script>
 </body>
 </html>

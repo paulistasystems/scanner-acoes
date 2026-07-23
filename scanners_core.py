@@ -1577,3 +1577,121 @@ def estrategia_b3_intraday(ativos=None):
             continue
 
     return pd.DataFrame(resultados).sort_values('Score Total', ascending=False)
+
+
+# === SCANNER 24 DE JULHO INTRADAY — BOAC34 e A1MD34 ===
+
+CAPITAL_PADRAO = 100000  # Altere conforme seu capital
+
+def sinal_intraday_24jul(risk_pct=1.0):
+    """
+    Scanner Intraday — Sinais para BOAC34 e A1MD34 com risco configurável.
+    BOAC34: Pullback na EMA9 com volume (1h).
+    A1MD34: Força compradora 1h + confluência 30m.
+    risk_pct: percentual do capital arriscado por trade (ex: 1.0 = 1%).
+    """
+    ATIVOS_ALVO = {
+        "BOAC34.SA": {
+            "nome": "BOAC34",
+            "entrada": 77.50, "stop": 75.80, "t1": 80.90, "t2": 82.60
+        },
+        "A1MD34.SA": {
+            "nome": "A1MD34",
+            "entrada": 346.50, "stop": 338.00, "t1": 355.50, "t2": 360.00
+        }
+    }
+
+    risco_decimal = risk_pct / 100.0
+    risco_reais = CAPITAL_PADRAO * risco_decimal
+
+    resultados = []
+    _prewarm_com_progresso(list(ATIVOS_ALVO.keys()), ['1h', '30m'])
+
+    for symbol, config in ATIVOS_ALVO.items():
+        try:
+            df_1h = baixar_dados(symbol, '1h', '5d')
+            if df_1h is None or len(df_1h) < 30:
+                continue
+
+            df_1h = df_1h.copy()
+            df_1h['EMA9'] = ta.ema(df_1h['Close'], length=9)
+            df_1h['EMA21'] = ta.ema(df_1h['Close'], length=21)
+            df_1h['RSI'] = ta.rsi(df_1h['Close'], length=14)
+            adx_df = ta.adx(df_1h['High'], df_1h['Low'], df_1h['Close'], length=14)
+            df_1h = pd.concat([df_1h, adx_df], axis=1)
+            df_1h['Vol_Avg'] = df_1h['Volume'].rolling(20).mean()
+            df_1h['Vol_Ratio'] = df_1h['Volume'] / df_1h['Vol_Avg']
+
+            u1h = df_1h.iloc[-1]
+            preco = safe_float(u1h['Close'])
+            rsi = safe_float(u1h['RSI'])
+            vol_ratio = safe_float(u1h['Vol_Ratio'])
+            adx_val = safe_float(u1h['ADX_14'])
+            ema9 = safe_float(u1h['EMA9'])
+            ema21 = safe_float(u1h['EMA21'])
+
+            df_30m = baixar_dados(symbol, '30m', '5d')
+            if df_30m is None or len(df_30m) < 20:
+                continue
+            df_30m = df_30m.copy()
+            df_30m['EMA9'] = ta.ema(df_30m['Close'], length=9)
+            df_30m['RSI'] = ta.rsi(df_30m['Close'], length=14)
+            df_30m['Vol_Avg'] = df_30m['Volume'].rolling(20).mean()
+            df_30m['Vol_Ratio'] = df_30m['Volume'] / df_30m['Vol_Avg']
+            u30 = df_30m.iloc[-1]
+            rsi_30m = safe_float(u30['RSI'])
+
+            distancia_stop = config['entrada'] - config['stop']
+            qtd = int(risco_reais / distancia_stop) if distancia_stop > 0 else 0
+
+            if symbol == "BOAC34.SA":
+                condicao = (
+                    preco > ema21
+                    and preco <= ema9 * 1.005
+                    and vol_ratio >= 1.5
+                    and 40 < rsi < 65
+                    and adx_val > 12
+                )
+                sinal = "🟢 PULLBACK C/ VOLUME" if condicao else "⏳ Aguardando pullback"
+                status = "✅ COMPRAR" if condicao else "⏳ Monitorar"
+            else:
+                forca_1h = (
+                    preco > ema9 and ema9 > ema21
+                    and 55 < rsi < 75
+                    and vol_ratio >= 1.3
+                    and adx_val > 15
+                )
+                confluencia_30m = (
+                    safe_float(u30['Close']) > safe_float(u30['EMA9'])
+                    and rsi_30m > 50
+                    and safe_float(u30['Vol_Ratio']) >= 1.2
+                )
+                if forca_1h and confluencia_30m:
+                    sinal = "🟢 FORÇA + CONFLUÊNCIA 30M"
+                    status = "✅ COMPRAR"
+                elif forca_1h:
+                    sinal = "⚠️ Força 1h OK, s/ confluência 30m"
+                    status = "⏳ Aguardar"
+                else:
+                    sinal = "⏳ Aguardando força 1h"
+                    status = "⏳ Monitorar"
+
+            resultados.append({
+                'Ativo': config['nome'],
+                'Preço': round(preco, 2),
+                'Sinal': sinal,
+                'RSI': round(rsi, 1),
+                'RSI 30m': round(rsi_30m, 1),
+                'ADX': round(adx_val, 1),
+                'Vol Ratio': round(vol_ratio, 2),
+                'Stop': config['stop'],
+                'T1': config['t1'],
+                'T2': config['t2'],
+                'Qtd': qtd,
+                'Risco (R$)': int(risco_reais),
+                'Status': status
+            })
+        except Exception:
+            continue
+
+    return pd.DataFrame(resultados)
