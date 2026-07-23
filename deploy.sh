@@ -238,7 +238,7 @@ EOF
   rm -rf "$PHP_STAGE"
   if [ -s "$PHP_TGZ" ]; then
     ftp_put "$PHP_TGZ" "/scanner/scanner_php_assets.tgz"
-    io_php "extract_tgz" "tgz=scanner_php_assets.tgz" "dest=${PHP_DEPLOY}"
+    io_php "extract_tgz" "tgz=scanner/scanner_php_assets.tgz" "dest=${PHP_DEPLOY}"
     rm -f "$PHP_TGZ"
     echo "   Tarball extraído em $PHP_DEPLOY"
   else
