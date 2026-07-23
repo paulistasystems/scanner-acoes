@@ -743,6 +743,20 @@ def clear_blacklist():
         conn.commit()
 
 
+def retry_symbol(symbol):
+    """Limpa falha e fill_state de um único símbolo para retentar."""
+    _ensure_schema()
+    sym = (symbol or "").strip().upper()
+    if not sym:
+        return False
+    with _lock:
+        conn = _connect()
+        conn.execute("DELETE FROM fetch_failures WHERE symbol=?", (sym,))
+        conn.execute("DELETE FROM fill_state WHERE symbol=?", (sym,))
+        conn.commit()
+    return True
+
+
 def retry_failures():
     """Limpa o registro de falhas e invalida o fill_state para que todos os
     símbolos que falharam sejam retentados na próxima aquisição."""

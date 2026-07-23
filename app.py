@@ -424,6 +424,15 @@ def api_retry_failures():
     count = data_layer.retry_failures()
     return jsonify({"success": True, "retried": count})
 
+@app.route('/api/retry_symbol', methods=['POST'])
+def api_retry_symbol():
+    req = request.get_json() or {}
+    sym = req.get('symbol', '')
+    if not sym:
+        return jsonify({"success": False, "error": "Nenhum símbolo informado"}), 400
+    data_layer.retry_symbol(sym)
+    return jsonify({"success": True})
+
 @app.route('/api/bars')
 def api_bars():
     symbol = request.args.get('symbol')

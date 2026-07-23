@@ -713,7 +713,7 @@ async function loadFailures() {
         if (delisted) {
             html += `<td><button class="btn-delist" data-reinstate="${escapeHtml(row.symbol)}" style="cursor:pointer;padding:4px 10px;background:#2e7d32;color:#fff;border:1px solid #555;border-radius:4px;">♻️ Reincluir</button></td>`;
         } else {
-            html += `<td><button class="btn-delist" data-delist="${escapeHtml(row.symbol)}" style="cursor:pointer;padding:4px 10px;background:#b71c1c;color:#fff;border:1px solid #555;border-radius:4px;">🚫 Delistar</button></td>`;
+            html += `<td style="white-space:nowrap;"><button class="btn-retry-sym" data-retry="${escapeHtml(row.symbol)}" style="cursor:pointer;padding:4px 10px;background:#e65100;color:#fff;border:1px solid #555;border-radius:4px;margin-right:4px;">🔄 Retentar</button><button class="btn-delist" data-delist="${escapeHtml(row.symbol)}" style="cursor:pointer;padding:4px 10px;background:#b71c1c;color:#fff;border:1px solid #555;border-radius:4px;">🚫 Delistar</button></td>`;
         }
         html += '</tr>';
     });
@@ -742,6 +742,30 @@ async function loadFailures() {
                 alert(`Erro ao ${verb} ${sym}. Tente novamente.`);
             } finally {
                 btn.disabled = false;
+            }
+        });
+    });
+
+    container.querySelectorAll('.btn-retry-sym').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            const sym = btn.dataset.retry;
+            btn.disabled = true;
+            btn.textContent = '⏳';
+            try {
+                const r = await fetch(`${BASE}/api/retry_symbol`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ symbol: sym }),
+                });
+                if (!r.ok) throw new Error('http ' + r.status);
+                await loadFailures();
+                updateStatus();
+            } catch (e) {
+                console.error(`Erro ao retentar ${sym}`, e);
+                alert(`Erro ao retentar ${sym}. Tente novamente.`);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = '🔄 Retentar';
             }
         });
     });
