@@ -227,7 +227,7 @@ def api_scan():
             df_fill = data_layer.read_fill_state()
             if not df_fill.empty:
                 filled_set = set(zip(df_fill['symbol'], df_fill['interval']))
-                intervals = ["1d", "1h", "30m", "15m"]
+                intervals = data_layer.REQUIRED_INTERVALS
                 ativos = [sym for sym in ativos if all((sym, iv) in filled_set for iv in intervals)]
 
     try:
@@ -291,7 +291,7 @@ def api_status():
 
     # Calculate today's missing requirements to supersede the raw overall counts
     from symbols_fallback import ATIVOS_B3_AMPLIADO
-    intervals = ["1d", "1h", "30m", "15m"]
+    intervals = list(data_layer.REQUIRED_INTERVALS)
 
     now_brt = data_layer._now_brt()
     ativos_validos = list(ATIVOS_B3_AMPLIADO)
@@ -330,7 +330,7 @@ def api_probe():
     e mostra EXATAMENTE o que AINDA FALTA baixar/atualizar para a sessão de hoje."""
 
     from symbols_fallback import ATIVOS_B3_AMPLIADO
-    intervals = ["1d", "1h", "30m", "15m"]
+    intervals = list(data_layer.REQUIRED_INTERVALS)
 
     # Inicia o warmup (worker roda em background) se não houver nenhum rodando.
     warm_started = warming.start_warm(ATIVOS_B3_AMPLIADO, intervals)
