@@ -117,11 +117,6 @@ def _ensure_schema():
                 PRIMARY KEY (symbol, interval)
             );
 
-            CREATE TABLE IF NOT EXISTS blacklist (
-                symbol TEXT PRIMARY KEY,
-                added_at TEXT
-            );
-
             -- Estado do warm em disco (nao em memoria): o Phusion Passenger roda varios
             -- processos; assim todos enxergam o mesmo running/done/total e o frontend
             -- pode esperar o aquecimento de forma confiavel. heartbeat_at permite
@@ -149,11 +144,6 @@ def _ensure_schema():
                 fetched_at TEXT NOT NULL,
                 payload    TEXT NOT NULL,   -- JSON cru do /v8/finance/chart
                 PRIMARY KEY (symbol, interval)
-            );
-
-            CREATE TABLE IF NOT EXISTS blacklist (
-                symbol TEXT PRIMARY KEY,
-                added_at TEXT
             );
             """
         )
@@ -271,7 +261,7 @@ def _set_fill_state(symbol, interval):
 
 
 def _record_failure(symbol, interval, attempts, err):
-    """Registra/incrementa uma falha de aquisição (base p/ blacklist e diagnóstico)."""
+    """Registra/incrementa uma falha de aquisição (base p/ diagnóstico)."""
     with _lock:
         conn = _connect()
         conn.execute(
@@ -671,7 +661,7 @@ def release_warm(finished_at):
 # ----------------------------- Aquisição (prewarm) + log de falhas -----------------------------
 def list_failures():
     """DataFrame com (symbol, interval) que falharam ao preencher, ordenado por
-    frequência — base para blacklist e diagnóstico por ativo."""
+    frequência — base para diagnóstico por ativo."""
     _ensure_schema()
     with _lock:
         rows = _connect().execute(
@@ -715,34 +705,6 @@ def db_summary():
 
 
 
-def get_blacklist():
-    _ensure_schema()
-    with _lock:
-        rows = _connect().execute("SELECT symbol FROM blacklist").fetchall()
-    return [r[0] for r in rows]
-
-
-def add_to_blacklist(symbols):
-    _ensure_schema()
-    if not symbols: return
-    now_str = _now_brt().isoformat()
-    with _lock:
-        conn = _connect()
-        conn.executemany("INSERT OR IGNORE INTO blacklist (symbol, added_at) VALUES (?, ?)", [(s, now_str) for s in symbols])
-        conn.commit()
-
-
-def clear_blacklist():
-    _ensure_schema()
-    with _lock:
-        conn = _connect()
-        conn.execute("DELETE FROM blacklist")
-        # Igual a reinstate_symbol por símbolo: remove também o histórico de
-        # falhas para que o universo volte idêntico ao estado "reincluído".
-        conn.execute("DELETE FROM fetch_failures")
-        conn.commit()
-
-
 def retry_symbol(symbol):
     """Limpa falha e fill_state de um único símbolo para retentar."""
     _ensure_schema()
@@ -771,95 +733,6 @@ def retry_failures():
     return len(symbols)
 
 
-def delist_symbol(symbol):
-    """Delisting LÓGICO e reversível: adiciona o símbolo à blacklist (que já
-    bloqueia aquisição/análise em data_ready/blacklist_missing) e limpa o
-    fill_state dele. NÃO remove fetch_failures — assim a linha continua aparecendo
-    na aba Falhas (com botão Reincluir). É uma operação de banco (blacklist),
-    não física — dá para desfazer via reinstate_symbol."""
-    _ensure_schema()
-    now_str = _now_brt().isoformat()
-    sym = (symbol or "").strip().upper()
-    if not sym:
-        return False
-    with _lock:
-        conn = _connect()
-        conn.execute(
-            "INSERT OR IGNORE INTO blacklist (symbol, added_at) VALUES (?, ?)",
-            (sym, now_str),
-        )
-        conn.execute("DELETE FROM fill_state WHERE symbol=?", (sym,))
-        conn.commit()
-    return True
-
-
-def list_delisted():
-    """Símbolos atualmente delistados (na blacklist), em DataFrame, para exibir
-    na aba Falhas mesmo quando não há linha correspondente em fetch_failures."""
-    _ensure_schema()
-    with _lock:
-        rows = _connect().execute(
-            "SELECT symbol, added_at FROM blacklist ORDER BY symbol"
-        ).fetchall()
-    if not rows:
-        return pd.DataFrame()
-    return pd.DataFrame(rows, columns=["symbol", "added_at"])
-
-
-def reinstate_symbol(symbol):
-    """Desfaz o delisting lógico: remove o símbolo da blacklist (e do
-    fetch_failures, se houver) para que volte a ser considerado pelo warm/análise.
-    Operação de banco, inversa de delist_symbol."""
-    _ensure_schema()
-    sym = (symbol or "").strip().upper()
-    if not sym:
-        return False
-    with _lock:
-        conn = _connect()
-        conn.execute("DELETE FROM blacklist WHERE symbol=?", (sym,))
-        conn.execute("DELETE FROM fetch_failures WHERE symbol=?", (sym,))
-        conn.commit()
-    return True
-
-
-def is_delisted(symbol):
-    """True se o símbolo está na blacklist (delistado logicamente)."""
-    _ensure_schema()
-    sym = (symbol or "").strip().upper()
-    if not sym:
-        return False
-    with _lock:
-        row = _connect().execute(
-            "SELECT 1 FROM blacklist WHERE symbol=?", (sym,)
-        ).fetchone()
-    return row is not None
-
-
-def blacklist_missing(symbols=None, intervals=None):
-    from symbols_fallback import ATIVOS_B3_AMPLIADO
-    base_symbols = list(symbols if symbols is not None else ATIVOS_B3_AMPLIADO)
-    intervals = list(intervals if intervals is not None else REQUIRED_INTERVALS)
-
-    blacklist = get_blacklist()
-    base_symbols = [s for s in base_symbols if s not in blacklist]
-
-    _ensure_schema()
-    with _lock:
-        conn = _connect()
-        filled = conn.execute("SELECT symbol, interval FROM fill_state").fetchall()
-
-    filled_set = {(r[0], r[1]) for r in filled}
-    missing_symbols = set()
-    for s in base_symbols:
-        if not all((s, iv) in filled_set for iv in intervals):
-            missing_symbols.add(s)
-
-    if missing_symbols:
-        add_to_blacklist(list(missing_symbols))
-
-    return list(missing_symbols)
-
-
 # Intervalos exigidos pelos scanners web (inclui Abertura 15m).
 REQUIRED_INTERVALS = ("1d", "1h", "30m", "15m")
 
@@ -869,7 +742,7 @@ def data_ready(symbols=None, intervals=None, sample_missing=8, exclude_failures=
 
     Idempotente com prewarm: só conta o que já está marcado como filled.
     Falhas em fetch_failures contam como "missing" (não liberam o gate) — o warm
-    pode retentar; símbolos delistados permanecem bloqueando até sair do universo.
+    pode retentar.
 
     Retorna dict serializável em JSON (usado por /api/status e /api/scan).
     """
@@ -893,10 +766,6 @@ def data_ready(symbols=None, intervals=None, sample_missing=8, exclude_failures=
 
     filled_set = {(r[0], r[1]) for r in filled}
 
-    # Derivar "símbolos sadios" -> a intersecção entre o catalogo e os preenchidos,
-    # verificando a blacklist global também no processo.
-    blacklist = get_blacklist()
-    base_symbols = [s for s in base_symbols if s not in blacklist]
     n_sym = len(base_symbols)
 
     if n_sym == 0:
@@ -910,18 +779,15 @@ def data_ready(symbols=None, intervals=None, sample_missing=8, exclude_failures=
              "coverage_pct": 100.0,
              "by_interval": [],
              "missing_sample": [],
-             "message": "Nenhum ativo verificado (blacklist vazia?)"
+             "message": "Nenhum ativo verificado"
          }
 
-    # Se já batemos 80% do universo livre, filtra in-memory símbolos com dados faltantes
     expected_total = n_sym * len(intervals)
     have_total = len([1 for s in base_symbols for iv in intervals if (s, iv) in filled_set])
     coverage_pct = round(100.0 * have_total / expected_total, 1) if expected_total else 0.0
 
     if coverage_pct > 80.0:
-       # Filtra in-memory símbolos que faltam algum intervalo — NÃO persiste
-       # em blacklist (blacklist_missing() é agressivo demais e blacklista
-       # permanentemente durante warm parcial).
+       # Filtra in-memory símbolos que faltam algum intervalo (warm parcial).
        missing_set = set(
            s for s in base_symbols
            if not all((s, iv) in filled_set for iv in intervals)

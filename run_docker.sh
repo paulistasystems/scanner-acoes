@@ -84,6 +84,18 @@ shift || true
 case "$cmd" in
   up)
     docker compose up --build -d "$@"
+    # O cache de IP do extprocessor do OLS fica obsoleto quando
+    # passenger/php são recriados e recebem outro IP. Reload graceful do
+    # LSWS força re-resolução do hostname do backend (sem downtime).
+    # (Com IPs fixos no compose isto é cinto+suspendentes, mas mantemos
+    #  o reload como seguro-de-falha.)
+    ols_container="$(docker compose ps -q openlitespeed 2>/dev/null || true)"
+    if [[ -n "$ols_container" ]] \
+       && docker exec "$ols_container" test -x /usr/local/lsws/bin/lswsctrl 2>/dev/null; then
+      echo "Reloading OpenLiteSpeed (re-resolve backends)..."
+      docker exec "$ols_container" /usr/local/lsws/bin/lswsctrl restart >/dev/null 2>&1 \
+        || docker exec "$ols_container" /usr/local/lsws/bin/lswsctrl restart 2>&1 || true
+    fi
     echo ""
     echo "  Local only (sem upload / sem produção)"
     echo "  UI:      http://localhost:8080/scanner/"

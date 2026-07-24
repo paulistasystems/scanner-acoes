@@ -318,31 +318,6 @@ function setupEventListeners() {
     document.getElementById('btn-run-all').addEventListener('click', startup);
     document.getElementById('btn-copy-prompt').addEventListener('click', copyPrompt);
 
-    const btnClearBlacklist = document.getElementById('btn-clear-blacklist');
-    if (btnClearBlacklist) {
-        btnClearBlacklist.addEventListener('click', async () => {
-            if (!confirm('Deseja reincluir todos os ativos ocultados (delistados devido a falhas)?\n\nIsso limpará a blacklist e forçará uma tentativa de download na próxima atualização.')) return;
-
-            try {
-                btnClearBlacklist.disabled = true;
-                btnClearBlacklist.textContent = '⏳ Limpando...';
-
-                await fetch(`${BASE}/api/clear_blacklist`, { method: 'POST' });
-
-                // Dispara refresh e warming imediatamente para recarregar tudo com o novo universo
-                await refreshDB();
-                await triggerWarm();
-
-            } catch (e) {
-                console.error("Erro ao limpar blacklist", e);
-                alert("Erro ao reincluir ativos. Tente novamente.");
-            } finally {
-                btnClearBlacklist.disabled = false;
-                btnClearBlacklist.textContent = '♻️ Reincluir Ativos Ocultos';
-            }
-        });
-    }
-
     const btnRetryFailures = document.getElementById('btn-retry-failures');
     if (btnRetryFailures) {
         btnRetryFailures.addEventListener('click', async () => {
@@ -705,10 +680,6 @@ async function loadFailures() {
         return;
     }
 
-    // Símbolos delistados são marcados pelo backend (interval === "(delistado)").
-    const delistedSymbols = new Set(
-        data.filter(r => r.interval === '(delistado)').map(r => r.symbol)
-    );
     // Renderiza uma única linha de ação por símbolo (pode ter várias falhas).
     const seen = new Set();
     const renderRows = [];
@@ -723,49 +694,18 @@ async function loadFailures() {
     html += '</tr></thead><tbody>';
 
     renderRows.forEach(row => {
-        const delisted = delistedSymbols.has(row.symbol);
-        const iv = delisted ? '(delistado)' : escapeHtml(row.interval);
         html += '<tr>';
         html += `<td>${escapeHtml(row.symbol)}</td>`;
-        html += `<td>${iv}</td>`;
+        html += `<td>${escapeHtml(row.interval)}</td>`;
         html += `<td>${row.attempts ?? ''}</td>`;
         html += `<td>${escapeHtml((row.last_error || '').slice(0, 200))}</td>`;
         html += `<td>${escapeHtml(row.last_attempt_at || '')}</td>`;
-        if (delisted) {
-            html += `<td><button class="btn-delist" data-reinstate="${escapeHtml(row.symbol)}" style="cursor:pointer;padding:4px 10px;background:#2e7d32;color:#fff;border:1px solid #555;border-radius:4px;">♻️ Reincluir</button></td>`;
-        } else {
-            html += `<td style="white-space:nowrap;"><button class="btn-retry-sym" data-retry="${escapeHtml(row.symbol)}" style="cursor:pointer;padding:4px 10px;background:#e65100;color:#fff;border:1px solid #555;border-radius:4px;margin-right:4px;">🔄 Retentar</button><button class="btn-delist" data-delist="${escapeHtml(row.symbol)}" style="cursor:pointer;padding:4px 10px;background:#b71c1c;color:#fff;border:1px solid #555;border-radius:4px;">🚫 Delistar</button></td>`;
-        }
+        html += `<td style="white-space:nowrap;"><button class="btn-retry-sym" data-retry="${escapeHtml(row.symbol)}" style="cursor:pointer;padding:4px 10px;background:#e65100;color:#fff;border:1px solid #555;border-radius:4px;">🔄 Retentar</button></td>`;
         html += '</tr>';
     });
 
     html += '</tbody></table>';
     container.innerHTML = html;
-
-    container.querySelectorAll('.btn-delist').forEach(btn => {
-        btn.addEventListener('click', async () => {
-            const sym = btn.dataset.delist || btn.dataset.reinstate;
-            const action = btn.dataset.delist ? 'delist' : 'reinstate';
-            const verb = action === 'delist' ? 'delistar (ocultar logicamente)' : 'reincluir';
-            if (!confirm(`Deseja ${verb} o ativo ${sym}?\n\nOperação lógica e reversível (blacklist no banco).`)) return;
-            btn.disabled = true;
-            try {
-                const r = await fetch(`${BASE}/api/${action}`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ symbol: sym }),
-                });
-                if (!r.ok) throw new Error('http ' + r.status);
-                await loadFailures();
-                updateStatus();
-            } catch (e) {
-                console.error(`Erro ao ${action} ${sym}`, e);
-                alert(`Erro ao ${verb} ${sym}. Tente novamente.`);
-            } finally {
-                btn.disabled = false;
-            }
-        });
-    });
 
     container.querySelectorAll('.btn-retry-sym').forEach(btn => {
         btn.addEventListener('click', async () => {

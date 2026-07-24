@@ -188,48 +188,6 @@ CONTAGEM_CATEGORIAS = {
     'FIIs': len(set(_FIIS_UNIVERSAL)),
 }
 
-# ===================== SÍMBOLOS DELISTADOS (seed/fallback) =====================
-# (symbol, nome, categoria) — fonte histórica: DELISTED_SYMBOLS.md.
-# Hoje só alimentam o diagnóstico 🧪; no Supabase viram status='delisted'.
-# Não há overlap com o universo ativo acima (verificado).
-_SIMBOLOS_DELISTADOS = [
-    # 2026-07-07 — falha persistente de download (empty/truncated)
-    ("NEOE3.SA",  "Neoenergia",      "Ações — Energia"),
-    ("IRDM11.SA", "FII Iridium",     "FII"),
-    # Confirmados delistados/ausentes no Yahoo (verificação 2026-07-04)
-    ("BPAN4.SA",  "Banco Pan",       "Bancos"),
-    ("CIEL3.SA",  "Cielo",           "Serviços Financeiros"),
-    ("AZUL4.SA",  "Azul",            "Aéreas"),
-    ("GOLL4.SA",  "Gol",             "Aéreas"),
-    ("ELET3.SA",  "Elektro",         "Energia"),
-    ("ELET6.SA",  "Eletrobras",      "Energia"),
-    ("AESB3.SA",  "AES Sul",         "Energia"),
-    ("TRPL4.SA",  "Transmissão",     "Energia"),
-    ("CCRO3.SA",  "CCR",             "Logística"),
-    ("STBP3.SA",  "Wilson Sons",     "Industrial"),
-    ("SQIA3.SA",  "Sinqia",          "Tecnologia"),
-    ("GEOO41.SA", "Geo",             "Industrial"),
-    ("ARZZ3.SA",  "Arezzo",          "Varejo"),
-    ("SOMA3.SA",  "Grupo Soma",      "Varejo"),
-    ("PETZ3.SA",  "Petz",            "Varejo"),
-    ("NTCO3.SA",  "Natura &Co",      "Consumo"),
-    ("META34.SA", "Meta",            "BDR Tech"),
-    ("P1LT34.SA", "Palantir",        "BDR Tech"),
-    ("A1XP34.SA", "Adobe",           "BDR Tech"),
-    ("COST34.SA", "Costco",          "BDR Consumo"),
-    ("INTC34.SA", "Intel",           "BDR Tech"),
-    ("MAST34.SA", "Mastercard",      "BDR Finanças"),
-    ("C1RM34.SA", "Ciena",           "BDR Tech"),
-    ("BOING34.SA","Boeing",          "BDR Industrial"),
-    ("S1NO34.SA", "Sony",            "BDR Tech"),
-    ("A1MG34.SA", "Abbott",          "BDR Saúde"),
-    ("BCFF11.SA", "FII BC FF",       "FII"),
-    ("SHOT11.SA", "ETF SHOT",        "ETF"),
-    ("MALL11.SA", "FII MALL",        "FII"),
-    ("EURP11.SA", "ETF Europa",      "ETF"),
-    ("RRRP3.SA",  "3R Petroleum",    "Petróleo"),
-]
-
 # ===================== Catálogo de seed (Supabase) =====================
 # Mapeia cada lista para (categoria, asset_type) — base para popular `symbols`.
 _STOCK_GROUPS = [
@@ -255,33 +213,15 @@ _BDR_GROUPS = [
     (BDR_INDUSTRIAL, "BDR Industrial", "BDR"),
 ]
 
-# Nome curto quando não há nome curado (fallback = ticker sem .SA).
-NAME_MAP = {s: n for s, n, _c in _SIMBOLOS_DELISTADOS}
-
-
-def _asset_type_for(category):
-    """Infere asset_type a partir do texto de categoria (usado só p/ delistados)."""
-    if not category:
-        return "Ação"
-    c = category.upper()
-    if "BDR" in c:
-        return "BDR"
-    if "FII" in c:
-        return "FII"
-    if "ETF" in c:
-        return "ETF"
-    return "Ação"
-
-
 def build_seed_catalog():
     """Lista de dicts {symbol, name, category, asset_type, status} prontos para upsert
-    na tabela `symbols` do Supabase. Universo ativo = 'listed'; delistados = 'delisted'."""
+    na tabela `symbols` do Supabase. Universo ativo = 'listed'."""
     catalog = {}  # symbol -> dict (dedup; primeira ocorrência vence a categoria)
 
     def add(sym, category, asset_type):
         catalog.setdefault(sym, {
             "symbol": sym,
-            "name": NAME_MAP.get(sym, sym.replace(".SA", "")),
+            "name": sym.replace(".SA", ""),
             "category": category,
             "asset_type": asset_type,
             "status": "listed",
@@ -297,16 +237,6 @@ def build_seed_catalog():
         add(s, "ETF", "ETF")
     for s in FIIS_B3:
         add(s, "FII", "FII")
-
-    # Delistados: sem overlap com o universo ativo → entram com a categoria curada.
-    for sym, name, cat in _SIMBOLOS_DELISTADOS:
-        catalog[sym] = {
-            "symbol": sym,
-            "name": name,
-            "category": cat or NAME_MAP.get(sym, sym.replace(".SA", "")),
-            "asset_type": _asset_type_for(cat),
-            "status": "delisted",
-        }
 
     return list(catalog.values())
 

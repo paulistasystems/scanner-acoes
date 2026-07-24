@@ -3,7 +3,7 @@
 """
 seed_symbols.py — Popular o catálogo `symbols` do Supabase (seed única, idempotente).
 
-Lê `symbols_fallback.build_seed_catalog()` (universo ativo + delistados) e faz upsert na
+Lê `symbols_fallback.build_seed_catalog()` (universo ativo) e faz upsert na
 tabela `symbols`, registrando cada entrada em `symbol_status_log` (source='seed').
 
 Pré-requisitos:
@@ -35,9 +35,7 @@ def main(dry_run=False):
         sys.exit(1)
 
     catalog = symbols_fallback.build_seed_catalog()
-    listed = [r for r in catalog if r["status"] == "listed"]
-    delisted = [r for r in catalog if r["status"] == "delisted"]
-    print(f"Seed: {len(catalog)} símbolos ({len(listed)} listed, {len(delisted)} delisted).")
+    print(f"Seed: {len(catalog)} símbolos (todos listed).")
 
     if dry_run:
         print("--dry-run: primeiras 5 linhas que seriam upsert:")
@@ -59,8 +57,6 @@ def main(dry_run=False):
             "liquidity_tier": "universal",
             "status": r["status"],
             "listed_at": now if r["status"] == "listed" else None,
-            "delisted_at": now if r["status"] == "delisted" else None,
-            "delist_reason": "seed (DELISTED_SYMBOLS.md)" if r["status"] == "delisted" else None,
         })
 
     n = 0

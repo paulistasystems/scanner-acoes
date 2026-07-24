@@ -8,7 +8,6 @@ from dotenv import load_dotenv
 # isto o .env (e SCANNER_CHART_URL) pode nao ser carregado no servidor.
 load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"))
 
-import pandas as pd
 import threading
 import time as _time
 
@@ -195,7 +194,6 @@ def api_scan():
         })
 
     # Gate: não analisa se o universo × intervalos não está completo
-    # O data_ready agora já exclui dinamicamente via blacklist caso chegue em > 80%
     ready = data_layer.data_ready(exclude_failures=exclude_failures)
     if not ready.get("ready"):
         return jsonify({
@@ -215,11 +213,6 @@ def api_scan():
     # Prepare args
     from symbols_fallback import ATIVOS_B3_AMPLIADO
     ativos = ATIVOS_B3_AMPLIADO
-
-    # Remove os globalmente delistados (blacklist)
-    blacklist = data_layer.get_blacklist()
-    if blacklist:
-        ativos = [sym for sym in ativos if sym not in blacklist]
 
     custom_symbols_str = request.args.get('symbols', '').strip()
     if custom_symbols_str and s.get("uses_symbols"):
@@ -301,8 +294,7 @@ def api_status():
     intervals = ["1d", "1h", "30m", "15m"]
 
     now_brt = data_layer._now_brt()
-    blacklist = set(data_layer.get_blacklist())
-    ativos_validos = [sym for sym in ATIVOS_B3_AMPLIADO if sym not in blacklist]
+    ativos_validos = list(ATIVOS_B3_AMPLIADO)
 
     missing_items = 0
     missing_items_list = []
@@ -350,8 +342,7 @@ def api_probe():
     data_layer._ensure_schema()
     now_brt = data_layer._now_brt()
 
-    blacklist = set(data_layer.get_blacklist())
-    ativos_validos = [sym for sym in ATIVOS_B3_AMPLIADO if sym not in blacklist]
+    ativos_validos = list(ATIVOS_B3_AMPLIADO)
 
     # Levanta rapidamente todos as falhas que ocorreram nos fetches.
     df_fail = data_layer.list_failures()
@@ -454,64 +445,9 @@ def api_fill_state():
     if df.empty: return jsonify([])
     return jsonify(df.to_dict(orient='records'))
 
-@app.route('/api/clear_blacklist', methods=['POST'])
-def api_clear_blacklist():
-    data_layer.clear_blacklist()
-    # Ao limpar a blacklist, vamos forçar um refresh dos dados para que o warmup traga de volta
-    # os simbolos agora aceitos, se houver necessidade
-    return jsonify({"success": True})
-
-@app.route('/api/delist', methods=['POST'])
-def api_delist():
-    """Delisting lógico e reversível (ver data_layer.delist_symbol)."""
-    req = request.get_json() or {}
-    symbols = req.get('symbols') or ([] if 'symbol' not in req else [req['symbol']])
-    if isinstance(symbols, str):
-        symbols = [symbols]
-    if not symbols:
-        return jsonify({"success": False, "error": "Nenhum símbolo informado"}), 400
-    done = []
-    for s in symbols:
-        if data_layer.delist_symbol(s):
-            done.append(s)
-    return jsonify({"success": True, "delisted": done})
-
-@app.route('/api/reinstate', methods=['POST'])
-def api_reinstate():
-    """Desfaz o delisting lógico (ver data_layer.reinstate_symbol)."""
-    req = request.get_json() or {}
-    symbols = req.get('symbols') or ([] if 'symbol' not in req else [req['symbol']])
-    if isinstance(symbols, str):
-        symbols = [symbols]
-    if not symbols:
-        return jsonify({"success": False, "error": "Nenhum símbolo informado"}), 400
-    done = []
-    for s in symbols:
-        if data_layer.reinstate_symbol(s):
-            done.append(s)
-    return jsonify({"success": True, "reinstated": done})
-
 @app.route('/api/failures')
 def api_failures():
     df = data_layer.list_failures()
-    # Mescla símbolos delistados que não possuem linha em fetch_failures, para que
-    # continuem aparecendo na aba Falhas com o botão de Reincluir.
-    try:
-        df_del = data_layer.list_delisted()
-    except Exception:
-        df_del = None
-    if df_del is not None and not df_del.empty:
-        delisted = set(df_del["symbol"].tolist())
-        have = set(df["symbol"].tolist()) if not df.empty else set()
-        extra = [s for s in delisted if s not in have]
-        if extra:
-            extra_rows = [{"symbol": s, "interval": "(delistado)", "fail_count": None,
-                           "attempts": None, "last_error": "Ativo ocultado (delistado logicamente).",
-                           "last_attempt_at": None} for s in extra]
-            if df.empty:
-                df = pd.DataFrame(extra_rows)
-            else:
-                df = pd.concat([df, pd.DataFrame(extra_rows)], ignore_index=True)
     if df.empty: return jsonify([])
     return jsonify(df.to_dict(orient='records'))
 

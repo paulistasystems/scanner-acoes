@@ -34,6 +34,11 @@ services:
       - passenger
       - php
     restart: unless-stopped
+    # Rede fixa para o OLS — props abaixo apenas documentais; o IP
+    # estático é definido em networks.*.ipv4_address.
+    networks:
+      scanner_net:
+        ipv4_address: 192.168.117.10
 
   passenger:
     build:
@@ -54,6 +59,11 @@ services:
     depends_on:
       - php
     restart: unless-stopped
+    # IP fixo: o cache de IP do extprocessor do OLS se mantém válido
+    # mesmo quando este container é recriado/rebuildado.
+    networks:
+      scanner_net:
+        ipv4_address: 192.168.117.3
 
   php:
     build:
@@ -67,6 +77,9 @@ services:
     expose:
       - "8008"
     restart: unless-stopped
+    networks:
+      scanner_net:
+        ipv4_address: 192.168.117.2
 
   # Prewarm só do volume compose (nunca produção)
   #   docker compose --profile warm run --rm warm
@@ -86,7 +99,18 @@ services:
     working_dir: /app
     depends_on:
       - php
+    networks:
+      scanner_net:
 
 volumes:
   scanner-data:
     name: scanner_acoes_data
+
+networks:
+  scanner_net:
+    name: scanner_acoes_net
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 192.168.117.0/24
+          gateway: 192.168.117.1
