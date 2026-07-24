@@ -151,9 +151,28 @@ that throttled/truncated Yahoo responses used to cause.
 - B3 is UTC-3 (no DST); the data layer is market-state-aware (B3 session 10:00–18:00,
   weekdays) for freshness.
 
-## Conventions
+## Adding a new intraday scanner (per-scanner UI)
 
-- User-facing text and code comments are in Portuguese (pt-BR).
+The `/day` page (`static/intraday.html` + `static/intraday.js`) builds both the
+scanner selector dropdown **and** the grid panels **dynamically** from the
+backend `/api/scanners` response (filtered by `group === 'intraday'`). To make
+a new scanner appear on the page — in the dropdown **and** as a runnable panel —
+register it in `SCANNERS_REGISTRY` (`app.py`) with `group: "intraday"`. No HTML
+edit is needed; `populateScannerSelector()` enumerates `intradayScanners`
+automatically.
+
+Relevant flags in the registry entry:
+- `uses_symbols` — accepts the `symbols` query param (user-typed ticker list).
+- `requires_symbols` — `True` = only runs when the user provides symbols; empty
+  input returns an empty `requires_symbols: true` payload and the panel shows
+  "✍️ aguarda ativos" (does **not** scan the full market). Use for scanners whose
+  full-market run is pointless/expensive (e.g. `monitoramento_intraday`,
+  `abertura_candidatos`, `abertura_confluencia`).
+- Preset scanners (`estrategia_b3_intraday`, `monitorar_juho`) **combine** their
+  hardcoded preset list with the user-typed symbols (dedup, order-preserving);
+  `sinal_intraday_24jul` has a hardcoded config dict so it runs preset-only.
+
+
 - When editing scanners, preserve `baixar_dados` / `baixar_dados_15m` signatures —
   they have ~22 call sites that must stay unchanged.
 - **Mudanças no app remoto (`paulista.dev/scanner`, Phusion Passenger) — deploy e
