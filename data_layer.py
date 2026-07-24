@@ -426,7 +426,7 @@ def _fetch_chart_direct(symbol, interval, period, use_cache=True):
     if egress:
         url = egress
         params = dict(params, symbol=symbol)
-        timeout = 25  # proxy PHP -> Yahoo adiciona um salto
+        timeout = 40  # proxy PHP -> Yahoo adiciona um salto
     else:
         url = _CHART_ENDPOINT.format(symbol=quote(symbol, safe=""))
         timeout = 15
