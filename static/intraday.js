@@ -50,10 +50,26 @@ function buildGrid() {
         grid.appendChild(panel);
     });
 
+    populateScannerSelector();
+
     // Wire per-scanner copy buttons (delegated)
     grid.querySelectorAll('.btn-copy-scanner').forEach(btn => {
         btn.addEventListener('click', () => copyPromptForScanner(btn.dataset.id));
     });
+}
+
+function populateScannerSelector() {
+    const sel = document.getElementById('scanner-selector');
+    if (!sel) return;
+    const current = sel.value;
+    sel.innerHTML = '<option value="">— Todos os scanners —</option>';
+    intradayScanners.forEach(s => {
+        const opt = document.createElement('option');
+        opt.value = s.id;
+        opt.textContent = s.name;
+        sel.appendChild(opt);
+    });
+    if (current) sel.value = current;
 }
 
 function panelFor(id) {
@@ -164,7 +180,11 @@ async function runAll() {
                 return;
             }
         }
-        const promises = intradayScanners.map((s) => runSingle(s));
+        const selected = document.getElementById('scanner-selector')?.value || '';
+        const targets = selected
+            ? intradayScanners.filter((s) => s.id === selected)
+            : intradayScanners;
+        const promises = targets.map((s) => runSingle(s));
         await Promise.allSettled(promises);
     } finally {
         setRunAllButton(true);
@@ -176,21 +196,27 @@ async function runSingle(scanner) {
     if (!panel) return;
     const body = panel.querySelector('.table-container');
 
+    // Pega o parametro de symbolos da pagina exclusiva
+    const customSymbols = document.getElementById('custom-symbols-input')?.value.trim();
+
+    // Scanners com requires_symbols (Monitoramento Intraday, Abertura
+    // Candidatos/Confluência) só rodam com input explícito do usuário.
+    if (scanner.requires_symbols && !customSymbols) {
+        setBadge(panel, 'empty', '✍️ aguarda ativos');
+        body.innerHTML = '<p class="placeholder">Digite ativos no filtro acima e clique em Atualizar.</p>';
+        const copyBtn = panel.querySelector('.btn-copy-scanner');
+        if (copyBtn) copyBtn.style.display = 'none';
+        delete scannerResults[scanner.id];
+        updateSummary();
+        return;
+    }
+
     setBadge(panel, 'loading', '⏳ executando…');
     body.innerHTML = '';
 
     let url = `${BASE}/api/scan?scanner=${encodeURIComponent(scanner.id)}`;
-
-    // Pega o parametro de symbolos da pagina exclusiva
-    const customSymbols = document.getElementById('custom-symbols-input')?.value.trim();
     if (customSymbols && scanner.uses_symbols) {
         url += `&symbols=${encodeURIComponent(customSymbols)}`;
-    }
-
-    // Passa o percentual de risco selecionado
-    const riskPct = document.getElementById('risk-pct-selector')?.value;
-    if (riskPct) {
-        url += `&risk_pct=${encodeURIComponent(riskPct)}`;
     }
 
     try {
@@ -211,6 +237,15 @@ async function runSingle(scanner) {
         if (data.error) {
             setBadge(panel, 'error', '❌ erro');
             body.innerHTML = `<p style="color:red">Erro: ${escapeHtml(data.error)}</p>`;
+            return;
+        }
+        if (data.requires_symbols) {
+            setBadge(panel, 'empty', '✍️ aguarda ativos');
+            body.innerHTML = '<p class="placeholder">Digite ativos no filtro acima e clique em Atualizar.</p>';
+            const copyBtn = panel.querySelector('.btn-copy-scanner');
+            if (copyBtn) copyBtn.style.display = 'none';
+            delete scannerResults[scanner.id];
+            updateSummary();
             return;
         }
         if (!data.rows || data.rows.length === 0) {

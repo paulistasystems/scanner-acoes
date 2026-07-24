@@ -104,6 +104,7 @@ SCANNERS_REGISTRY = {
         "func": scanners_core.coletar_candidatos,
         "uses_profile": False,
         "uses_symbols": True,
+        "requires_symbols": True,
         "group": "intraday"
     },
     "abertura_confluencia": {
@@ -111,6 +112,7 @@ SCANNERS_REGISTRY = {
         "func": scanners_core.coletar_confluencia_15m_30m,
         "uses_profile": False,
         "uses_symbols": True,
+        "requires_symbols": True,
         "group": "intraday"
     },
     "monitoramento_intraday": {
@@ -118,6 +120,7 @@ SCANNERS_REGISTRY = {
         "func": scanners_core.monitoramento_intraday,
         "uses_profile": False,
         "uses_symbols": True,
+        "requires_symbols": True,
         "group": "intraday"
     },
     "estrategia_b3_intraday": {
@@ -167,6 +170,7 @@ def get_scanners():
             "name": v["name"],
             "uses_profile": v["uses_profile"],
             "uses_symbols": v.get("uses_symbols", False),
+            "requires_symbols": v.get("requires_symbols", False),
             "group": v.get("group", "swing")
         })
     return jsonify({"scanners": scanners})
@@ -228,6 +232,14 @@ def api_scan():
         custom_symbols = [x.strip() for x in custom_symbols_str.split(',') if x.strip()]
         if custom_symbols:
             ativos = custom_symbols
+    elif s.get("requires_symbols"):
+        # Scanners marcados como requires_symbols (ex: Monitoramento Intraday,
+        # Abertura Candidatos/Confluência) não rodam contra a lista cheia do
+        # mercado — exigem input explícito do usuário.
+        payload = {"columns": [], "rows": [], "warming": False,
+                   "requires_symbols": True}
+        _scan_cache_put(cache_key, payload)
+        return jsonify(payload)
     else:
         # Se o modo restrito foi acionado, remove os que tiverem qualquer falha pontual
         if exclude_failures and ready.get("ready"):
@@ -260,10 +272,15 @@ def api_scan():
             elif scanner_id == "monitoramento_intraday":
                 df = s["func"](ativos)
             elif scanner_id == "estrategia_b3_intraday":
-                # Usa a lista própria da estratégia quando nenhum símbolo
-                # específico foi informado no frontend (campo de ativos).
+                # Combina a lista própria da estratégia com eventuais símbolos
+                # extras informados no frontend (campo de ativos), evitando
+                # duplicatas e preservando a ordem.
                 if custom_symbols_str and s.get("uses_symbols"):
-                    df = s["func"](ativos)
+                    base = list(scanners_core.ESTRATEGIA_B3_SYMBOLS)
+                    for sym in ativos:
+                        if sym not in base:
+                            base.append(sym)
+                    df = s["func"](base)
                 else:
                     df = s["func"](None)
             elif scanner_id == "sinal_intraday_24jul":
@@ -271,7 +288,11 @@ def api_scan():
                 df = s["func"](risk_pct=risk_pct)
             elif scanner_id == "monitorar_juho":
                 if custom_symbols_str and s.get("uses_symbols"):
-                    df = s["func"](ativos)
+                    base = list(scanners_core.JUHO_SYMBOLS)
+                    for sym in ativos:
+                        if sym not in base:
+                            base.append(sym)
+                    df = s["func"](base)
                 else:
                     df = s["func"](scanners_core.JUHO_SYMBOLS)
             else:
