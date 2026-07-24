@@ -41,12 +41,18 @@ function buildGrid() {
             <header>
                 <span class="panel-name">${escapeHtml(s.name)}</span>
                 <div class="panel-actions">
+                    <button class="btn-copy-scanner" data-id="${escapeHtml(s.id)}" style="display:none;">📋 Copiar</button>
                     <span class="panel-badge loading">⏳ aguardando</span>
                 </div>
             </header>
             <div class="table-container"></div>
         `;
         grid.appendChild(panel);
+    });
+
+    // Wire per-scanner copy buttons (delegated)
+    grid.querySelectorAll('.btn-copy-scanner').forEach(btn => {
+        btn.addEventListener('click', () => copyPromptForScanner(btn.dataset.id));
     });
 }
 
@@ -210,6 +216,8 @@ async function runSingle(scanner) {
         if (!data.rows || data.rows.length === 0) {
             setBadge(panel, 'empty', '— vazio');
             body.innerHTML = '<p class="placeholder">Nenhum ativo encontrado.</p>';
+            const copyBtn = panel.querySelector('.btn-copy-scanner');
+            if (copyBtn) copyBtn.style.display = 'none';
             delete scannerResults[scanner.id];
             updateSummary();
             return;
@@ -218,6 +226,8 @@ async function runSingle(scanner) {
         setBadge(panel, 'done', `✅ ${data.rows.length} ativos`);
         renderTable(body, data.columns, data.rows);
         scannerResults[scanner.id] = { name: scanner.name, columns: data.columns, rows: data.rows };
+        const copyBtn = panel.querySelector('.btn-copy-scanner');
+        if (copyBtn) copyBtn.style.display = 'inline-block';
         updateSummary();
     } catch (e) {
         setBadge(panel, 'error', '❌ rede');
@@ -496,6 +506,62 @@ function flashCopied(copyBtn) {
         copyBtn.style.background = '';
         copyBtn.style.color = '';
     }, 2000);
+}
+
+function copyPromptForScanner(scannerId) {
+    const r = scannerResults[scannerId];
+    if (!r || !r.rows.length) return;
+    const panel = panelFor(scannerId);
+    const copyBtn = panel ? panel.querySelector('.btn-copy-scanner') : null;
+
+    const symbolsInput = document.getElementById('custom-symbols-input')?.value.trim();
+    const filtro = symbolsInput ? `\n\n**Filtro de Ativos Aplicado:** ${symbolsInput}` : '';
+
+    const corpo = `\n\n### ${r.name} (${r.rows.length} ativos)\n` + formatScanner(r.rows, r.columns);
+
+    const promptTrader = `### Você é um trader profissional de Intraday e Abertura no mercado brasileiro (B3).
+
+**Regras de Análise (obedeça rigorosamente):**
+- Timeframe principal: 15 minutos (abertura) / 30 minutos (confluência)
+- Estilo: Intraday (day trade), sem carregar overnight
+- Risco máximo por trade: 1% do capital
+- Risk:Reward mínimo obrigatório: **1:2**
+- **Só liste setups de COMPRA válidos** (nada de venda ou short)
+- Considere os horários de abertura (10:00-10:30) e confluência 15m/30m
+
+**Responda EXATAMENTE neste formato:**
+
+### ANÁLISE FINAL (INTRADAY)
+
+**Setups de Compra Válidos (em ordem de prioridade):**
+
+**XXXX** → **Score: XX/100**
+**Entrada Sugerida:** R$ XXXX
+**Stop Loss:** R$ XXXX (-X.X%)
+**Target 1:** R$ XXXX (+X.X% | R:R 1:2)
+**Target 2:** R$ XXXX (+X.X% | R:R 1:3)
+**Confluência 15m + 30m:**
+**Forças principais:**
+**Fraquezas / Riscos:**
+**Estratégia sugerida (horário de entrada):**
+
+**Resumo Geral:**
+**Viés do mercado hoje (abertura):**
+**Nível de risco do dia (Baixo / Médio / Alto):**
+
+Seja objetivo, direto e conservador. Se não houver setups bons, diga claramente "Não há setups de compra válidos no momento."
+
+---
+
+**Dados do Scanner (scanner individual):**${filtro}
+`;
+
+    copyText(promptTrader + corpo).then(() => {
+        flashCopied(copyBtn);
+    }).catch(err => {
+        console.error('Erro ao copiar para clipboard:', err);
+        alert('Erro ao copiar automaticamente.');
+    });
 }
 
 function renderTable(container, columns, rows) {

@@ -133,6 +133,13 @@ SCANNERS_REGISTRY = {
         "uses_profile": False,
         "uses_symbols": False,
         "group": "intraday"
+    },
+    "monitorar_juho": {
+        "name": "23/07 Intraday Juho — WEGE3 + VIVT3 + GGBR3 + PYPL34 + DIVO11",
+        "func": scanners_core.monitorar_juho,
+        "uses_profile": False,
+        "uses_symbols": True,
+        "group": "intraday"
     }
 }
 
@@ -262,6 +269,11 @@ def api_scan():
             elif scanner_id == "sinal_intraday_24jul":
                 risk_pct = float(request.args.get('risk_pct', 1.0))
                 df = s["func"](risk_pct=risk_pct)
+            elif scanner_id == "monitorar_juho":
+                if custom_symbols_str and s.get("uses_symbols"):
+                    df = s["func"](ativos)
+                else:
+                    df = s["func"](scanners_core.JUHO_SYMBOLS)
             else:
                 df = s["func"](ativos)
                 

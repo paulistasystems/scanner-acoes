@@ -1579,6 +1579,65 @@ def estrategia_b3_intraday(ativos=None):
     return pd.DataFrame(resultados).sort_values('Score Total', ascending=False)
 
 
+# === MONITOR JUHO — Intraday (1H) ===
+
+# Ativos do monitor Juho (intraday). Sobrescrita via parâmetro `symbols` do
+# frontend (campo de ativos específicos na página /day).
+JUHO_SYMBOLS = [
+    'WEGE3.SA', 'VIVT3.SA', 'GGBR3.SA', 'PYPL34.SA', 'DIVO11.SA'
+]
+
+def monitorar_juho(ativos):
+    """
+    Monitor Intraday Juho — 5 ativos em 1H.
+    Reproduz o monitor standalone (RSI 14 + ADX 14, status de oversold/overbought
+    e tendência), porém lendo do banco (data_layer.get_bars) e sem `pandas_ta`.
+    """
+    hoje = data_layer.session_today()
+
+    resultados = []
+    _prewarm_com_progresso(ativos, ['1d', '1h'])
+
+    for symbol in ativos:
+        try:
+            # Dados de 1 hora (5 dias para histórico suficiente)
+            df = baixar_dados(symbol, '1h', '5d')
+            if df is None or df.empty or len(df) < 20:
+                continue
+
+            preco_atual = safe_float(df['Close'].iloc[-1])
+            preco_anterior = safe_float(df['Close'].iloc[-2]) if len(df) > 1 else preco_atual
+            variacao = ((preco_atual - preco_anterior) / preco_anterior) * 100 if preco_anterior > 0 else 0.0
+            volume = safe_float(df['Volume'].iloc[-1])
+
+            rsi = safe_float(ta.rsi(df['Close'], length=14).iloc[-1])
+            adx_df = ta.adx(df['High'], df['Low'], df['Close'], length=14)
+            adx = safe_float(adx_df['ADX_14'].iloc[-1])
+
+            if rsi < 30 and adx > 25:
+                status = "⚠️ Oversold + tendência"
+            elif rsi > 70 and adx > 25:
+                status = "⚠️ Overbought + tendência"
+            elif adx > 30:
+                status = "Tendência forte"
+            else:
+                status = "Neutro / Consolidação"
+
+            resultados.append({
+                'Ativo': symbol.replace('.SA', ''),
+                'Preço': round(preco_atual, 2),
+                'Var %': round(variacao, 2),
+                'Volume': int(volume),
+                'RSI 1H': round(rsi, 1),
+                'ADX 1H': round(adx, 1),
+                'Status': status,
+            })
+        except Exception:
+            continue
+
+    return pd.DataFrame(resultados)
+
+
 # === SCANNER 24 DE JULHO INTRADAY — BOAC34 e A1MD34 ===
 
 CAPITAL_PADRAO = 100000  # Altere conforme seu capital
