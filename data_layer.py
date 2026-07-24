@@ -543,14 +543,22 @@ def get_bars(symbol, interval, period):
         return pd.DataFrame()
 
     # Remove trailing bar(s) com Close ausente ou Volume zero — Yahoo às vezes
-    # devolve uma barra vazia para o último dia antes de o dado ser finalizado.
-    # Isso quebraria scanners que leem df.iloc[-1] (Close=NaN, Volume=0).
+    # devolve barras vazias (phantom, pré-finalização) nos últimas candles
+    # intradiários de B3, com Volume=0 e timestamp fora do grid regular (ex.:
+    # 13:04, 14:52). A versão anterior limpava só a última barra; agora
+    # percorremos TODAS as barras finais com volume nulo/zero até achar uma
+    # válida, senão scanners que leem df.iloc[-1] relatam Volume=0 mesmo com o
+    # mercado aberto. Nota: barras genuinamente zeradas (leilão de abertura/
+    # fechamento) também serão descartadas — aceitável porque ainda restam as
+    # barras horárias reais com volume > 0 para o cálculo de indicadores.
     if len(df) > 1:
-        last_idx = df.index[-1]
-        last_close = df['Close'].iloc[-1]
-        last_vol = df['Volume'].iloc[-1]
-        if pd.isna(last_close) or last_vol == 0:
-            df = df.iloc[:-1]
+        while len(df) > 1:
+            last_close = df['Close'].iloc[-1]
+            last_vol = df['Volume'].iloc[-1]
+            if pd.isna(last_close) or last_vol == 0:
+                df = df.iloc[:-1]
+            else:
+                break
 
     days = _PERIOD_DAYS.get(period)
     if days:
