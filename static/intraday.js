@@ -50,26 +50,10 @@ function buildGrid() {
         grid.appendChild(panel);
     });
 
-    populateScannerSelector();
-
     // Wire per-scanner copy buttons (delegated)
     grid.querySelectorAll('.btn-copy-scanner').forEach(btn => {
         btn.addEventListener('click', () => copyPromptForScanner(btn.dataset.id));
     });
-}
-
-function populateScannerSelector() {
-    const sel = document.getElementById('scanner-selector');
-    if (!sel) return;
-    const current = sel.value;
-    sel.innerHTML = '<option value="">— Todos os scanners —</option>';
-    intradayScanners.forEach(s => {
-        const opt = document.createElement('option');
-        opt.value = s.id;
-        opt.textContent = s.name;
-        sel.appendChild(opt);
-    });
-    if (current) sel.value = current;
 }
 
 function panelFor(id) {
@@ -180,11 +164,7 @@ async function runAll() {
                 return;
             }
         }
-        const selected = document.getElementById('scanner-selector')?.value || '';
-        const targets = selected
-            ? intradayScanners.filter((s) => s.id === selected)
-            : intradayScanners;
-        const promises = targets.map((s) => runSingle(s));
+        const promises = intradayScanners.map((s) => runSingle(s));
         await Promise.allSettled(promises);
     } finally {
         setRunAllButton(true);

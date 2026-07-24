@@ -11,7 +11,7 @@
             var i = p.lastIndexOf('/');
             return (i >= 0 ? p.slice(0, i + 1) : '/');
         })();
-        document.write('<link rel="stylesheet" href="' + window.APP_BASE + 'style.css?v=20260724a">');
+        document.write('<link rel="stylesheet" href="' + window.APP_BASE + 'style.css?v=20260724b">');
     </script>
 </head>
 <body>
@@ -49,14 +49,6 @@
                 <input type="text" id="custom-symbols-input" placeholder="PETR4.SA, VALE3.SA, BBDC4.SA..." style="width: 100%; max-width: 500px; padding: 8px; border-radius: 4px; border: 1px solid #555; background: #222; color: #fff;">
             </div>
 
-            <div id="scanner-controls" style="margin-top: 15px;">
-                <h3 class="config-title">Scanner</h3>
-                <p class="desc-text">Selecione um scanner específico para rodar contra os ativos informados. Em branco, roda todos os scanners disponíveis.</p>
-                <select id="scanner-selector" style="padding: 8px; border-radius: 4px; border: 1px solid #555; background: #222; color: #fff; font-size: 14px; min-width: 250px;">
-                    <option value="">— Todos os scanners —</option>
-                </select>
-            </div>
-
             <!-- Fake exclude logic just so app.js doesn't crash if it tries to read the checkbox -->
             <input type="checkbox" id="cb-exclude-failures" style="display: none;">
 
@@ -92,7 +84,7 @@
     </main>
 
     <script>
-        document.write('<script src="' + window.APP_BASE + 'intraday.js?v=20260724a"><\/script>');
+        document.write('<script src="' + window.APP_BASE + 'intraday.js?v=20260724b"><\/script>');
     </script>
 </body>
 </html>
