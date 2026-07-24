@@ -238,7 +238,9 @@ if [ "$FORCE_DEPLOY" = true ] || [ "$CURRENT_PHP_HASH" != "$PREVIOUS_PHP_HASH" ]
 set ftp:passive-mode on
 set net:timeout 60
 set net:max-retries 3
-mkdir -p $PHP_DEPLOY
+# lftp's mkdir (unlike shell `mkdir -p`) errors on an existing dir, so tolerate
+# the "550 File exists" failure — the dir is already there from prior deploys.
+mkdir -p $PHP_DEPLOY || true
 put php/io.php -o $PHP_DEPLOY/io.php
 bye
 EOF
