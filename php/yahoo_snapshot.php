@@ -7,7 +7,7 @@
  * escrita atômica (temp + rename). Devolve:
  *   - página HTML de status (default) — tabela símbolo × timeframe (verde/vermelho),
  *     legível como log de checagem;
- *   - ?json=1  → sumário JSON (para o python/consume_snapshot.py).
+ *   - ?json=1  → sumário JSON (para o php/consume_snapshot.py).
  *
  * Fluxo: dispare uma vez (build ~30-60s p/ ~864 séries); depois consuma os arquivos
  * estáticos. Chame de novo para regerar (sobrescreve atomicamente). Lock evita dois

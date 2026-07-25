@@ -491,7 +491,7 @@ probe PHP que cobriu os **214/214 símbolos** do universo (0 delistados de verda
 - **`php/yahoo_chart.php`** — proxy direto ao Chart API v8 (browser UA, sem crumb).
   Egress único, usado em local e remoto. Deployado no subpath `/scanner/` do domínio
   (`public_html/scanner/`). `php/yahoo_probe.php` + `php/symbols.json`
-  (gerado por `python/gen_symbols.py`) = diagnóstico de cobertura.
+  (gerado por `php/gen_symbols.py`) = diagnóstico de cobertura.
 - **`data_layer._fetch_chart_direct`** — quando `SCANNER_CHART_URL` está setada, busca
   via esse proxy em vez de Yahoo direto. `run_web.sh` sobe `php -S` local (PHP 8.3) e
   exporta a URL; o `.env` local aponta para ele. Em produção a URL é

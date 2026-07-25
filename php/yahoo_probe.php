@@ -4,7 +4,7 @@
  * do servidor (paulista.dev).
  *
  * Lê `php/symbols.json` (universo autoritativo do scanner, gerado por
- * `python/gen_symbols.py` a partir de `symbols_fallback.ATIVOS_B3_AMPLIADO`) e testa
+ * `php/gen_symbols.py` a partir de `symbols_fallback.ATIVOS_B3_AMPLIADO`) e testa
  * um slice de cada vez, classificando cada símbolo:
  *
  *   DATA    — Yahoo devolveu candles            (símbolo ativo, econômico)
