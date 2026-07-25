@@ -211,64 +211,61 @@ if [ "$FORCE_DEPLOY" = true ]; then
   echo "   Modo force ativado — forçando upload de site-packages e app."
 fi
 
-# ── 1. PHP + static assets → tarball via FTP + io.php extract_tgz ──────────
+# ── 1. PHP + static assets → upload individual via FTP (per-file hash) ───────
 # Sobe PHP proxies, io.php, symbols.json e assets estáticos (js/css/html)
 # para o docroot do LiteSpeed (public_html/scanner/). Os assets estáticos
 # precisam estar no docroot porque o LiteSpeed retorna 503 para .js servidos
 # via Flask.
 #
-# Estratégia: sobe o io.php primeiro (necessário para os extract steps),
-# depois empacota o resto num tarball e extrai via io.php — 2 uploads + 1
-# curl em vez de 11 lftp put individuais. Hash guard evita re-upload.
+# Cada ficheiro tem o seu próprio hash (marker em /tmp/scanner_php_markers/):
+# se editar só o style.css, só o style.css é re-enviado. Antes, era um único
+# hash colectivo que re-empacotava tudo ao menor toque num único ficheiro.
 PHP_DEPLOY="domains/paulista.dev/public_html/scanner"
-PHP_MARKER="/tmp/scanner_php_marker"
-CURRENT_PHP_HASH=$(find php/yahoo_chart.php php/yahoo_bulk.php php/yahoo_probe.php \
-  php/yahoo_snapshot.php php/warm_cron_status.php php/io.php php/symbols.json \
-  static/app.js static/intraday.js static/style.css static/index.html static/intraday.html \
-  -type f -exec sha1sum {} \; | sort | sha1sum | cut -d' ' -f1)
-PREVIOUS_PHP_HASH=""
-[ -f "$PHP_MARKER" ] && PREVIOUS_PHP_HASH=$(cat "$PHP_MARKER")
+PHP_MARKER_DIR="/tmp/scanner_php_markers"
+mkdir -p "$PHP_MARKER_DIR"
 
-if [ "$FORCE_DEPLOY" = true ] || [ "$CURRENT_PHP_HASH" != "$PREVIOUS_PHP_HASH" ]; then
-  echo ""
-  echo "==> 1. Enviando PHP + static assets para $PHP_DEPLOY ..."
-  # 1a. Sobe io.php sozinho (precisa estar no ar antes do extract)
-  echo "   1a. io.php individual..."
-  lftp -u "$FTP_USER","$FTP_PASS" "ftp://$FTP_HOST" <<EOF
-set ftp:passive-mode on
-set net:timeout 60
-set net:max-retries 3
-# lftp's mkdir (unlike shell `mkdir -p`) errors on an existing dir, so tolerate
-# the "550 File exists" failure — the dir is already there from prior deploys.
-mkdir -p $PHP_DEPLOY || true
-put php/io.php -o $PHP_DEPLOY/io.php
-bye
-EOF
-  # 1b. Stage flat (sem io.php) → tarball → ftp_put → io.php extract_tgz
-  echo "   1b. Tarball dos demais assets -> io.php extract_tgz..."
-  PHP_STAGE=$(mktemp -d)
-  for f in php/yahoo_chart.php php/yahoo_bulk.php php/yahoo_probe.php \
-    php/yahoo_snapshot.php php/warm_cron_status.php php/symbols.json \
-    static/app.js static/intraday.js static/style.css static/index.html static/intraday.html; do
-    cp -p "$f" "$PHP_STAGE/$(basename "$f")"
-  done
-  PHP_TGZ="/tmp/scanner_php_assets.tgz"
-  cd "$PHP_STAGE" && find . -mindepth 1 -maxdepth 1 | tar -czf "$PHP_TGZ" -T - && cd - >/dev/null
-  rm -rf "$PHP_STAGE"
-  if [ -s "$PHP_TGZ" ]; then
-    ftp_put "$PHP_TGZ" "/scanner/scanner_php_assets.tgz"
-    io_php "extract_tgz" "tgz=scanner/scanner_php_assets.tgz" "dest=${PHP_DEPLOY}"
-    rm -f "$PHP_TGZ"
-    echo "   Tarball extraído em $PHP_DEPLOY"
-  else
-    rm -f "$PHP_TGZ"
-    echo "   Tarball vazio (só io.php mudou), pulando extract."
+# Migrar do esquema antigo (marker colectivo) para o novo esquema per-file:
+# remove o marker velho para forçar re-upload completo uma única vez e limpar.
+rm -f /tmp/scanner_php_marker
+
+PHP_STATIC_FILES=(
+  php/yahoo_chart.php php/yahoo_bulk.php php/yahoo_probe.php
+  php/yahoo_snapshot.php php/warm_cron_status.php php/io.php php/symbols.json
+  static/app.js static/intraday.js static/style.css
+  static/index.html static/intraday.html
+)
+
+echo ""
+echo "==> 1. Verificando PHP + static assets ($PHP_DEPLOY) ..."
+
+# Compute per-file hashes first; collect the ones that changed into a batch.
+PHP_CHANGED=()
+PHP_UPLOAD_COUNT=0
+for f in "${PHP_STATIC_FILES[@]}"; do
+  base=$(basename "$f")
+  current_hash=$(sha1sum "$f" | cut -d' ' -f1)
+  marker_file="$PHP_MARKER_DIR/$base.sha1"
+  previous_hash=""
+  [ -f "$marker_file" ] && previous_hash=$(cat "$marker_file")
+  if [ "$FORCE_DEPLOY" = true ] || [ "$current_hash" != "$previous_hash" ]; then
+    PHP_CHANGED+=("$f")
+    echo "$current_hash" > "$marker_file"
+    PHP_UPLOAD_COUNT=$((PHP_UPLOAD_COUNT + 1))
   fi
-  echo "$CURRENT_PHP_HASH" > "$PHP_MARKER"
-  echo "   PHP + static assets sincronizados (docroot)."
+done
+
+if [ "$PHP_UPLOAD_COUNT" -eq 0 ]; then
+  echo "   PHP + static assets não mudaram, pulando."
 else
-  echo ""
-  echo "==> 1. PHP + static assets não mudaram, pulando."
+  # Single lftp session: mkdir + one put per changed file (1 connection total).
+  lftp_cmd="set ftp:passive-mode on\nset net:timeout 60\nset net:max-retries 3\nmkdir -p $PHP_DEPLOY || true\n"
+  for f in "${PHP_CHANGED[@]}"; do
+    lftp_cmd+="put \"$f\" -o $PHP_DEPLOY/$(basename "$f")\n"
+  done
+  lftp_cmd+="bye"
+  echo "   Enviando $PHP_UPLOAD_COUNT ficheiro(s) em 1 sessão FTP ..."
+  printf '%b' "$lftp_cmd" | lftp -u "$FTP_USER","$FTP_PASS" "ftp://$FTP_HOST"
+  echo "   PHP + static assets: $PHP_UPLOAD_COUNT ficheiro(s) enviado(s) (docroot)."
 fi
 
 # ── 2. Build and Upload site-packages ────────────────────────────────────────
