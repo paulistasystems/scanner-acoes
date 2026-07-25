@@ -58,6 +58,19 @@ MAX_PERIOD = {"1d": "1y", "1h": "75d", "30m": "45d", "15m": "5d"}
 _SESSION_START_HOUR = 10   # 10:00
 _SESSION_END_HOUR = 18     # 18:00
 
+# Tempo de "assentamento" pós-fechamento (minutos após 18:00 BRT) antes de
+# confiar nos candles do pregão corrente. O Yahoo continua REESCREVENDO a
+# última barra intradiária/diária da sessão mesmo após o pregão fechar — volume
+# de negócios reportados tarde e o preço oficial de fechamento (leilão de
+# fechamento) substituem o último print. Observed: a mesma barra 17:00 UTC de
+# GGBR3 em 2026-07-24 veio close=20.75 v=9700 (fetch ao vivo) e depois
+# close=20.71 v=10200 (fetch pós-fechamento). Sem esta janela, dois servidores
+# que aquecem antes vs depois do assentamento ficam com barras diferentes para
+# o MESMO timestamp — divergência dos scans mesmo com código idêntico.
+# Durante esta janela `_is_filled` devolve False para o pregão corrente,
+# forçando o `get_bars` a re-buscar no Yahoo até os valores assentarem.
+_SETTLE_AFTER_CLOSE_MIN = 30
+
 # Fatiamento na leitura (em dias corridos), equivalente ao `period` do yfinance.
 _PERIOD_DAYS = {"1y": 365, "75d": 75, "60d": 60, "45d": 45, "30d": 30, "15d": 15, "5d": 5}
 
@@ -176,6 +189,24 @@ def _session_open(now):
     return _SESSION_START_HOUR <= now.hour < _SESSION_END_HOUR
 
 
+def _in_settle_window(now):
+    """Janela de assentamento pós-fechamento? True quando o pregão de hoje
+    já fechou (>= 18:00 BRT, dia útil) mas ainda não passou
+    `_SETTLE_AFTER_CLOSE_MIN` minutos — período em que o Yahoo ainda está
+    reescrevendo a última barra (volume/close oficiais). Durante esta janela
+    `_is_filled` desconfia dos dados do "pregão de hoje" e força re-fetch.
+
+    Dias posteriores (qualquer horário) já estão assentados -> False."""
+    if now.weekday() >= 5:  # fim de semana
+        return False
+    # durante o pregão: ainda não fechou -> False (ainda ao vivo)
+    if now.hour < _SESSION_END_HOUR:
+        return False
+    # same-day, após 18:00 -> só conta dos primeiros _SETTLE_AFTER_CLOSE_MIN min
+    close_at = now.replace(hour=_SESSION_END_HOUR, minute=0, second=0, microsecond=0)
+    return (now - close_at) < timedelta(minutes=_SETTLE_AFTER_CLOSE_MIN)
+
+
 def _last_trading_day(now):
     """Dia de pregão mais recente (date), ignorando feriados."""
     d = now.date()
@@ -255,6 +286,13 @@ def _is_filled(symbol, interval, now):
     if not max_ts:
         return False
     expected = _expected_last_completed_bar_ts(interval, now)
+    # Janela de assentamento pós-fechamento: o Yahoo ainda está reescrevendo a
+    # última barra do pregão de hoje (volume/close oficiais chegam tarde). Se
+    # estamos nessa janela e o DB tem barras do pregão corrente, desconfia e
+    # força re-fetch — assim um warm pré vs pós-assentamento converge para os
+    # mesmos valores, eliminando a divergência dos scans entre servidores.
+    if _in_settle_window(now) and max_ts[:10] == expected[:10]:
+        return False
     if interval == "1d" or not _session_open(now):
         # Fora de pregão / diário: basta ter candles do último pregão (robusto a
         # pequenas diferenças no horário exato do último candle retornado).
