@@ -657,6 +657,27 @@ def get_bars(symbol, interval, period):
         if prev_mean and prev_mean > 0 and float(df["Volume"].iloc[-1]) < 0.05 * prev_mean:
             df = df.iloc[:-1]
 
+    # Normalização intradiária: o Yahoo devolve snapshots não-determinísticos de
+    # warm em warm — barras phantom com Volume=0 (timestamp off-grid tipo
+    # 13:01, 17:48) e barras fora do boundary do intervalo (ex.: 1h que deveria
+    # cair em HH:00:00). Num servidor vs outro isso gera séries de tamanhos /
+    # conteúdos diferentes e os indicadores (ADX/RSI) divergem mesmo com o
+    # "mesmo código". Aqui descartamos, SÓ intradiário, (a) toda barra com
+    # Volume==0 (phantom — candle real sempre tem volume > 0 na B3) e (b) toda
+    # barra cujo timestamp não está alinhado ao grid do intervalo. O resultado
+    # é uma série regular e determinística, independente do instante do fetch —
+    # dois servidores no mesmo ponto pós-fechamento passam a ler a mesma série.
+    if interval != "1d":
+        minutes = _INTERVAL_MIN.get(interval)
+        if minutes:
+            # (a) drop phantoms de volume zero (candle real sempre tem volume > 0)
+            df = df[df["Volume"].notna() & (df["Volume"].astype(float) != 0)]
+            # (b) alinha ao grid: só boundary ticks (minuto múltiplo do intervalo,
+            #     segundo e microssegundo zerados). Descarta off-grid 13:01/17:48.
+            idx = df.index
+            grid_ok = (idx.minute % minutes == 0) & (idx.second == 0) & (idx.microsecond == 0)
+            df = df[grid_ok]
+
     days = _PERIOD_DAYS.get(period)
     if days:
         # Âncora o cutoff no timestamp mais recente disponível no banco para este
