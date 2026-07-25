@@ -27,6 +27,7 @@ resolvida armazenando a profundidade máxima por intervalo e fatiando na leitura
 
 import os
 import time
+import json
 import sqlite3
 import threading
 from datetime import datetime, timedelta, timezone
@@ -144,6 +145,18 @@ def _ensure_schema():
                 fetched_at TEXT NOT NULL,
                 payload    TEXT NOT NULL,   -- JSON cru do /v8/finance/chart
                 PRIMARY KEY (symbol, interval)
+            );
+
+            -- Cache de curta duração (TTL ~15s) dos resultados de /api/scan,
+            -- persistido em DB para ser consistente entre os vários processos
+            -- do Passenger (a versão in-memory era por-processo e servia state
+            -- divergente em diferentes workers). payload = JSON do payload que
+            -- /api/scan devolve; key = "<scanner_id>&<k>=<v>&...". O warm/refresh
+            -- invalida tudo.
+            CREATE TABLE IF NOT EXISTS scan_cache (
+                key       TEXT PRIMARY KEY,
+                ts        REAL NOT NULL,      -- time.time() do python (epoch)
+                payload   TEXT NOT NULL       -- JSON do payload de /api/scan
             );
             """
         )
@@ -294,6 +307,71 @@ def invalidate():
         conn = _connect()
         conn.execute("DELETE FROM fill_state")
         conn.execute("DELETE FROM chart_cache")
+        conn.execute("DELETE FROM scan_cache")
+        conn.commit()
+
+
+# ----------------------------- scan_cache (DB, multi-processo) -----------------------------
+# TTL curto (~15s): pads concorrentes do mesmo scanner (várias abas) devolvem o
+# payload em cache em vez de re-rodar o scan pesado sobre ~300 ativos × 4 TFs.
+# Persistido em DB (e não in-memory por processo) porque o Passenger roda vários
+# workers — assim todos enxergam o mesmo cache e não há divergência de estado.
+SCAN_CACHE_TTL = 15  # segundos
+
+
+def scan_cache_key(scanner_id, args):
+    """Chave estável para /api/scan: scanner_id + pares k=v ordenados (sem 'scanner').
+    Espelha o helper que vivia em app.py para manter o mesmo espaço de chaves."""
+    parts = [scanner_id]
+    for k in sorted(args.keys()):
+        if k == "scanner":
+            continue
+        parts.append(f"{k}={args.get(k)}")
+    return "&".join(parts)
+
+
+def scan_cache_get(key):
+    """Devolve o payload do cache se fresco (dentro do TTL), senão None e limpa-o."""
+    _ensure_schema()
+    with _lock:
+        row = _connect().execute(
+            "SELECT ts, payload FROM scan_cache WHERE key=?", (key,)
+        ).fetchone()
+        if not row:
+            return None
+        ts, payload = row
+        if time.time() - ts > SCAN_CACHE_TTL:
+            _connect().execute("DELETE FROM scan_cache WHERE key=?", (key,))
+            _connect().commit()
+            return None
+    try:
+        return json.loads(payload)
+    except Exception:
+        return None
+
+
+def scan_cache_put(key, payload):
+    """Salva o payload JSONável em scan_cache (upsert), marcando a hora atual."""
+    _ensure_schema()
+    try:
+        payload_json = json.dumps(payload, default=str)
+    except Exception:
+        return
+    with _lock:
+        conn = _connect()
+        conn.execute(
+            "INSERT OR REPLACE INTO scan_cache(key, ts, payload) VALUES (?,?,?)",
+            (key, time.time(), payload_json),
+        )
+        conn.commit()
+
+
+def invalidate_scan_cache():
+    """Esvazia todo o cache de resultados de scan (chamado pelo warm/refresh)."""
+    _ensure_schema()
+    with _lock:
+        conn = _connect()
+        conn.execute("DELETE FROM scan_cache")
         conn.commit()
 
 

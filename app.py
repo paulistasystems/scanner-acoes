@@ -8,9 +8,6 @@ from dotenv import load_dotenv
 # isto o .env (e SCANNER_CHART_URL) pode nao ser carregado no servidor.
 load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"))
 
-import threading
-import time as _time
-
 import data_layer
 import warming
 import scanners_core
@@ -19,43 +16,10 @@ from symbols_fallback import ATIVOS_B3_AMPLIADO
 
 app = Flask(__name__, static_folder='static')
 
-# Cache curto de resultados de /api/scan: evita que polls concorrentes (várias
-# abas/tabs) re-executem o scan pesado sobre ~300 ativos × 4 timeframes e
-# esgotem os workers do LSAPI (busy:8). TTL pequeno; invalidado por warm/refresh.
-_SCAN_CACHE = {}  # key -> (timestamp, payload)
-_SCAN_CACHE_TTL = 15  # segundos
-_SCAN_CACHE_LOCK = threading.Lock()
-
-
-def _scan_cache_key(scanner_id, args):
-    parts = [scanner_id]
-    for k in sorted(args.keys()):
-        if k == "scanner":
-            continue
-        parts.append(f"{k}={args.get(k)}")
-    return "&".join(parts)
-
-
-def _scan_cache_get(key):
-    with _SCAN_CACHE_LOCK:
-        entry = _SCAN_CACHE.get(key)
-        if not entry:
-            return None
-        ts, payload = entry
-        if _time.time() - ts > _SCAN_CACHE_TTL:
-            _SCAN_CACHE.pop(key, None)
-            return None
-        return payload
-
-
-def _scan_cache_put(key, payload):
-    with _SCAN_CACHE_LOCK:
-        _SCAN_CACHE[key] = (_time.time(), payload)
-
-
-def invalidate_scan_cache():
-    with _SCAN_CACHE_LOCK:
-        _SCAN_CACHE.clear()
+# Cache curto de resultados de /api/scan (TTL ~15s), persistido em DB pelo
+# data_layer.scan_cache_*: os vários workers do Passenger compartilham o mesmo
+# cache (a versão in-memory era por-processo e servia state divergente).
+# Invalidado pelo warm/refresh via data_layer.invalidate_scan_cache().
 
 # Map of available scanners
 SCANNERS_REGISTRY = {
@@ -214,10 +178,10 @@ def api_scan():
             "error": ready.get("message") or "Dados incompletos — rode o warm.",
         }), 503
 
-    # Cache curto: polls concorrentes do mesmo scanner retornam o payload em
-    # cache em vez de re-rodar o scan pesado (reduz hold-time de worker).
-    cache_key = _scan_cache_key(scanner_id, request.args)
-    cached = _scan_cache_get(cache_key)
+    # Cache curto (DB, multi-processo): polls concorrentes do mesmo scanner
+    # retornam o payload em cache em vez de re-rodar o scan pesado.
+    cache_key = data_layer.scan_cache_key(scanner_id, request.args)
+    cached = data_layer.scan_cache_get(cache_key)
     if cached is not None:
         return jsonify(cached)
 
@@ -238,7 +202,7 @@ def api_scan():
         # mercado — exigem input explícito do usuário.
         payload = {"columns": [], "rows": [], "warming": False,
                    "requires_symbols": True}
-        _scan_cache_put(cache_key, payload)
+        data_layer.scan_cache_put(cache_key, payload)
         return jsonify(payload)
     else:
         # Se o modo restrito foi acionado, remove os que tiverem qualquer falha pontual
@@ -300,7 +264,7 @@ def api_scan():
                 
         if df is None or df.empty:
             payload = {"columns": [], "rows": [], "warming": False}
-            _scan_cache_put(cache_key, payload)
+            data_layer.scan_cache_put(cache_key, payload)
             return jsonify(payload)
             
         columns = [{"key": str(c), "label": str(c)} for c in df.columns]
@@ -310,7 +274,7 @@ def api_scan():
         rows = clean_nan(rows)
         
         payload = {"columns": columns, "rows": rows, "warming": False}
-        _scan_cache_put(cache_key, payload)
+        data_layer.scan_cache_put(cache_key, payload)
         return jsonify(payload)
     except Exception as e:
         import traceback
@@ -433,14 +397,13 @@ def api_warm():
     intervals_str = req.get('intervals', '1d,1h,30m,15m')
     intervals = [i.strip() for i in intervals_str.split(',') if i.strip()]
     ativos = ATIVOS_B3_AMPLIADO
-    invalidate_scan_cache()
+    data_layer.invalidate_scan_cache()
     started = warming.start_warm(ativos, intervals)
     return jsonify({"started": started, "status": warming.status()})
 
 @app.route('/api/refresh', methods=['POST'])
 def api_refresh():
     data_layer.invalidate()
-    invalidate_scan_cache()
     return jsonify({"success": True})
 
 @app.route('/api/retry_failures', methods=['POST'])
