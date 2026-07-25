@@ -560,6 +560,25 @@ def get_bars(symbol, interval, period):
             else:
                 break
 
+    # Remove trailing daily bar(s) "stub" (sessão parcial / pré-fechamento). O
+    # warm cron de vezes em quando dispara enquanto a B3 está aberta ou logo
+    # após o pregão, e o Yahoo devolve a candle diária "de hoje" com Volume
+    # POSITIVO mas minúsculo (ex.: 50K contra ~30M de média 20 dias) — ela
+    # passa pelo strip de volume==0 acima, porém envenena df.iloc[-1] em
+    # scanners que exigem vol_ratio >= 1.5 (toda a lista é descartada e o scan
+    # devolve vazio no servidor mesmo com dados completos). Aqui descartamos a
+    # última barra diária quando o volume é < 5% da média das 20 barras
+    # anteriores — limiar conservador que só apanha stubs inequívocos e
+    # preserva dias legítimos de baixa liquidez. Restrito ao intervalo 1d: em
+    # intradiário um candle de volume baixo é real (abertura/leilão) e não deve
+    # ser descartado. Percorre apenas a barra final (uma única), porque o
+    # histórico diário completo já veio fechado — só o stub mais recente é novo.
+    if interval == "1d" and len(df) > 21:
+        prev20 = df["Volume"].iloc[-21:-1].astype(float)
+        prev_mean = prev20.mean()
+        if prev_mean and prev_mean > 0 and float(df["Volume"].iloc[-1]) < 0.05 * prev_mean:
+            df = df.iloc[:-1]
+
     days = _PERIOD_DAYS.get(period)
     if days:
         # Âncora o cutoff no timestamp mais recente disponível no banco para este
