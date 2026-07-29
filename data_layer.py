@@ -278,6 +278,40 @@ def _has_fill_state(symbol, interval):
     return row is not None
 
 
+def _fill_state_ts(symbol, interval):
+    """ISO8601 (BRT) do instante em que (symbol, interval) foi último preenchido,
+    ou None. Gravado por `_set_fill_state` via `_now_brt().isoformat()`."""
+    with _lock:
+        row = _connect().execute(
+            "SELECT last_filled_at FROM fill_state WHERE symbol=? AND interval=?",
+            (symbol, interval),
+        ).fetchone()
+    return row[0] if row else None
+
+
+def _settle_end_on(now):
+    """Instante (BRT, tz-aware) em que a janela de assentamento do pregão que
+    fecha em `now` terminou, ou None se `now` ainda é durante o pregão ou a
+    própria janela. Útil para decidir se um warm PRE-settle deve ser refrescado:
+    qualquer fetch ANTES deste instante capturou um snapshot ainda não finalizado
+    pelo Yahoo (volume/close oficiais) e precisa de um re-fetch para convergir
+    com um servidor aquecido depois."""
+    if _in_settle_window(now):
+        return None
+    # Dia útil e ainda dentro do pregão -> in-settle (tratado acima) ou pré-fechamento:
+    # _in_settle_window já devolve False aqui, mas distinguimos "antes das 18:00"
+    # (sessão viva) de "depois das 18:30" (assentado). Para dias NÃO úteis o
+    # último pregão relevante é o da última sexta -> ajustamos alvo ao fechamento
+    # daquele pregão + janela de assentamento.
+    if now.weekday() < 5 and now.hour < _SESSION_END_HOUR:
+        return None
+    day = _last_trading_day(now)
+    return (
+        datetime(day.year, day.month, day.day, _SESSION_END_HOUR, 0, 0, tzinfo=B3_TZ)
+        + timedelta(minutes=_SETTLE_AFTER_CLOSE_MIN)
+    )
+
+
 def _is_filled(symbol, interval, now):
     """Portão "está preenchido?". DB primeiro; yfinance só se não preenchido."""
     if not _has_fill_state(symbol, interval):
@@ -293,6 +327,33 @@ def _is_filled(symbol, interval, now):
     # mesmos valores, eliminando a divergência dos scans entre servidores.
     if _in_settle_window(now) and max_ts[:10] == expected[:10]:
         return False
+    # Após a janela de assentamento (>= 18:30 BRT, fora do pregão): se o DB tem
+    # barras do pregão corrente mas o ÚLTIMO fill aconteceu ANTES do assentamento
+    # terminar, o snapshot está obsoleto (capturou pré-fechamento/pré-revisão do
+    # Yahoo) e precisa de um re-fetch para os dois servidores convergirem para o
+    # snapshot finalizado. Isto é a causa raiz da divergência local vs remoto
+    # pós-mercado: um aquecido as 17:06 (pré-settle) e outro as 19:08 (pós-settle)
+    # ficavam presos com barras diferentes indefinidamente, pois ambos passam no
+    # gate "tem candles de hoje" acima. Conferimos last_filled_at contra o
+    # instante de fim do assentamento do pregão que fechou.
+    if (not _session_open(now)) and max_ts[:10] == expected[:10]:
+        settle_end = _settle_end_on(now)
+        if settle_end is not None:
+            filled_at = _fill_state_ts(symbol, interval)
+            if filled_at is None:
+                return False
+            try:
+                fa = datetime.fromisoformat(filled_at)
+            except Exception:
+                fa = None
+            if fa is None:
+                return False
+            # last_filled_at pode ter vindo tz-naive (servidor sem tz ou fill
+            # antigo) — assume BRT para a comparação não disparar TypeError.
+            if fa.tzinfo is None:
+                fa = fa.replace(tzinfo=B3_TZ)
+            if fa < settle_end:
+                return False
     if interval == "1d" or not _session_open(now):
         # Fora de pregão / diário: basta ter candles do último pregão (robusto a
         # pequenas diferenças no horário exato do último candle retornado).

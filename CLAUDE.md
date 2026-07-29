@@ -176,15 +176,37 @@ Relevant flags in the registry entry:
 - When editing scanners, preserve `baixar_dados` / `baixar_dados_15m` signatures —
   they have ~22 call sites that must stay unchanged.
 - **Mudanças no app remoto (`paulista.dev/scanner`, Phusion Passenger) — deploy e
-  restart automatizados pelo Claude.** O pipeline de deploy está estável: o Claude pode
-  subir arquivos ao servidor via FTP (deploy de `app.py`/`data_layer.py`/`.env`/PHP/JS/CSS/HTML)
-  sem precisar perguntar ao usuário antes de cada mudança. Checagens só-leitura
+  restart são feitos pelo USUÁRIO, não pelo Claude.** O Claude pode subir arquivos
+  individuais ao servidor via FTP (deploy de `app.py`/`data_layer.py`/`.env`/PHP/JS/CSS/HTML)
+  sem precisar perguntar ao usuário antes de cada mudança; checagens só-leitura
   (`curl /api/status`, `/api/bars`, baixar `stderr.log`, listar diretórios via FTP)
-  também seguem liberadas. Sempre confirme ao usuário após o deploy concluído.
-  **Restart:** `tmp/restart.txt` via FTP **não funciona** (o Passenger ignora).
-  O restart deve ser feito pelo **DirectAdmin** (painel → "Stop" + "Start" do app).
-  Peça ao usuário para fazer o restart manual pelo DirectAdmin após deploy.
+  também seguem liberadas. **Mas `deploy.sh` é executado pelo usuário, nunca pelo
+  Claude** — o Claude não dispara `./deploy.sh`. Após concluir um ciclo de
+  desenvolvimento (mudanças prontas e, quando aplicável, commitados/pushados), o Claude
+  deve orientar o usuário a executar dois passos, nesta ordem, para que as mudanças
+  entrem em vigor no remoto:
+  **(1) Deploy:** o usuário roda `./deploy.sh` (faz upload dos arquivos via FTP,
+  sempre fixando `SCANNER_CHART_URL` para a URL pública de produção).
+  **(2) Restart:** o usuário reinicia o app pelo **DirectAdmin** (Account Manager →
+  PHP/env → "Stop" + "Start" do app). `tmp/restart.txt` via FTP **NÃO funciona**
+  neste remote — o Passenger/LiteSpeed ignora o touch e o processo continua rodando
+  o código ANTIGO. Os dois passos são necessários: só o deploy sem restart deixa o
+  app servindo código obsoleto; só o restart sem deploy não sobe as mudanças.
+  Sempre confirme ao usuário após ambos concluídos (é útil pedir o output do
+  `deploy.sh` e/ou um `curl /api/status` pós-restart para validar).
 - **Desenvolvimento e Branches:** Trabalhe e commite diretamente na branch `master` (branch padrão) deste repositório sem a necessidade de criar branches temporárias/intermediárias, a menos que o usuário instrua explicitamente o contrário.
+- **NUNCA faça upload do `scanner.db` de desenvolvimento para o remoto** (e nem baixe
+  o de produção para o local). O banco é um artefato de runtime, **não** código de
+  deploy — subir o DB do container Docker local (`scanner_acoes_data` volume) /
+  `scanner.docker.db` / `db_sync.sh export` sobre o servidor destrói o estado de
+  aquecimento de produção (fill_state, chart_cache, fetch_failures) e troca o snapshot
+  de Yahoo capturado localmente pelo capturado no dev, quebrando a paridade e a sanidade
+  do `warm_cron`. A regra aplica-se a **qualquer** canal manual (FTP/SFTP/`scp`/`docker cp`),
+  não só ao `deploy.sh` — que aliás já tem um guard que aborta se houver `*.db` no stage
+  e jamais sincroniza `scanner.db`. Upload de banco = RESULTADO GARANTIDO DE DIVERGÊNCIA
+  e perda de dados de produção. Se for preciso zerar/resetar o banco **remoto**, isso é
+  uma ação destrutiva do **usuário** via `deploy.sh --reset-db`, **nunca** o Claude copiando
+  um DB sobre o servidor.
 - **Push via `gh`:** o git remoto é HTTPS e não tem credencial armazenada no shell. Para
   fazer push, use o `gh` (já autenticado como `paulistasystems`): `gh auth setup-git`
   seguido de `git push origin master`. Não tente push direto por HTTPS sem token nem por
@@ -193,6 +215,12 @@ Relevant flags in the registry entry:
   `gio trash <caminho>`. Arquivos dentro de `/tmp` e subdiretórios podem usar `rm`
   (`/tmp` é volátil por definição). Esta regra aplica-se a comandos no terminal e
   scripts executados pelo Claude.
+- **Sempre execute comandos Python dentro do Docker** (`docker exec ...`): o ambiente
+  de produção remoto é Linux com Python 3.9 via Passenger, mas o local é macOS — o
+  `venv39/` local pode não existir ou ter dependências incompatíveis. Use
+  `docker exec scanner-acoes-passenger-1 python ...` (ou `docker compose exec passenger ...`)
+  para rodar scripts, testes, e verificações. Isto garante paridade de libs/versão com o
+  remoto. A única exceção é `deploy.sh` e `./run_web.sh` (que já orquestram Docker internamente).
 - **Scripts que parseiam seus próprios argumentos:** ao receber um parâmetro desconhecido,
   devem sair com código não-zero (ex.: `exit 1`) e exibir o `usage`/ajuda — nunca ignorar
   silenciosamente o argumento inválido. (`deploy.sh` e `remote_logs.sh` seguem esse padrão.)
