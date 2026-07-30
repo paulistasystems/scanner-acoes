@@ -28,6 +28,7 @@ remote_logs/
 # Artefatos de sessão do Claude Code
 EnterPlanMode*
 tools/_*.json
+session-*.md
 
 # Logs/transcrições de sessão (artefatos de runtime) — requirements.txt segue versionado
 *.txt
