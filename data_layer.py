@@ -698,6 +698,71 @@ def _read_bars(symbol, interval):
     return df
 
 
+def _reconstruct_today_daily(symbol, daily_df, now):
+    """Reconstrói a barra diária do último pregão a partir de barras intradiárias.
+
+    Yahoo devolve volume=0 / close=None para a barra 1d mais recente após o
+    fechamento. As barras intradiárias (15m) têm volume correto. Esta função:
+      1. Lê as barras 15m BRUTAS do DB (inclui phantoms com V=0).
+      2. Calcula volume = soma das barras 15m do último pregão com volume > 0.
+      3. Usa o close da ÚLTIMA barra 15m do pregão (close oficial).
+      4. Calcula high = max, low = min, open = primeira barra 15m do pregão.
+      5. Atualiza a última barra do daily_df e salva no DB.
+    Retorna o daily_df com a barra corrigida (ou inalterado se os dados
+    intradiários não estiverem disponíveis).
+    """
+    last_trade = _last_trading_day(now)
+    try:
+        # Tenta 15m primeiro (mais granular, volume mais preciso); fallback para 1h.
+        for intra_interval in ("15m", "1h"):
+            with _lock:
+                conn = _connect()
+                rows = conn.execute(
+                    "SELECT ts, open, high, low, close, volume FROM bars "
+                    "WHERE symbol=? AND interval=? AND ts LIKE ? ORDER BY ts",
+                    (symbol, intra_interval, str(last_trade) + "%"),
+                ).fetchall()
+            if rows:
+                break
+        if not rows:
+            return daily_df
+        # Converte para DataFrame
+        intra = pd.DataFrame(rows, columns=["ts", "Open", "High", "Low", "Close", "Volume"])
+        intra["ts"] = pd.to_datetime(intra["ts"])
+        intra = intra.set_index("ts")
+        if intra.empty:
+            return daily_df
+        # Volume: soma das barras com volume > 0 (exclui phantoms)
+        vol_mask = intra["Volume"] > 0
+        rebuilt_vol = float(intra.loc[vol_mask, "Volume"].sum()) if vol_mask.any() else 0
+        # Close: última barra do pregão com close válido (exclui None/NaN)
+        valid_close = intra["Close"].dropna()
+        rebuilt_close = float(valid_close.iloc[-1]) if len(valid_close) > 0 else 0
+        rebuilt_high = float(intra["High"].max())
+        rebuilt_low = float(intra["Low"].min())
+        rebuilt_open = float(intra["Open"].iloc[0])
+        # Atualiza a barra diária
+        daily_df.iloc[-1, daily_df.columns.get_loc("Close")] = rebuilt_close
+        daily_df.iloc[-1, daily_df.columns.get_loc("Volume")] = rebuilt_vol
+        daily_df.iloc[-1, daily_df.columns.get_loc("Open")] = rebuilt_open
+        daily_df.iloc[-1, daily_df.columns.get_loc("High")] = rebuilt_high
+        daily_df.iloc[-1, daily_df.columns.get_loc("Low")] = rebuilt_low
+        # Persiste no DB para que futuras leituras não necessitem reconstrução
+        last_ts = daily_df.index[-1]
+        with _lock:
+            conn = _connect()
+            conn.execute(
+                "UPDATE bars SET open=?, high=?, low=?, close=?, volume=? "
+                "WHERE symbol=? AND interval='1d' AND ts=?",
+                (rebuilt_open, rebuilt_high, rebuilt_low, rebuilt_close, rebuilt_vol,
+                 symbol, last_ts.isoformat() if hasattr(last_ts, 'isoformat') else str(last_ts)),
+            )
+            conn.commit()
+        return daily_df
+    except Exception:
+        return daily_df
+
+
 # ----------------------------- API pública -----------------------------
 def get_bars(symbol, interval, period):
     """Devolve candles OHLCV de (symbol, interval) fatiados por `period`.
@@ -718,6 +783,26 @@ def get_bars(symbol, interval, period):
     df = _read_bars(symbol, interval)
     if df is None or df.empty:
         return pd.DataFrame()
+
+    # Reconstrução da barra diária de hoje a partir de dados intradiários.
+    # Yahoo frequentemente devolve a barra 1d de hoje com Volume=0 e/ou Close
+    # None após o fechamento (fenômeno pós-settle). A barra é armazenada no DB
+    # mas o strip de volume==0/Close ausente a remove → o ativo some do scan.
+    # A solução: quando a última barra diária é do último pregão e tem deficiência,
+    # reconstruí-la a partir das barras 1h (que Yahoo retorna com volume/close
+    # corretos). Isto garante paridade entre servidores (a série 1h é
+    # determinística pós-fechamento).
+    if interval == "1d" and len(df) > 0:
+        last_ts = df.index[-1]
+        # Último pregão pode ser "hoje" (se em horário de pregão) ou ontem
+        # (se fora de pregão, ex.: 00:17 BRT → último pregão = 2026-07-29).
+        last_trade = _last_trading_day(now)
+        last_ts_str = str(last_ts)[:10]
+        if last_ts_str == str(last_trade):
+            last_close = df["Close"].iloc[-1]
+            last_vol = df["Volume"].iloc[-1]
+            if pd.isna(last_close) or last_vol == 0:
+                df = _reconstruct_today_daily(symbol, df, now)
 
     # Remove trailing bar(s) com Close ausente ou Volume zero — Yahoo às vezes
     # devolve barras vazias (phantom, pré-finalização) nos últimas candles

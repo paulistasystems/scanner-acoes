@@ -30,13 +30,7 @@ ENV PYTHONUNBUFFERED=1 \
 
 EXPOSE 3000
 
-CMD ["bash", "-lc", "exec passenger start /app \
-  --address 0.0.0.0 \
-  --port 3000 \
-  --app-type wsgi \
-  --startup-file passenger_wsgi.py \
-  --python python3 \
-  --min-instances 1 \
-  --max-pool-size 2 \
-  --max-requests ${PASSENGER_MAX_REQUESTS:-25} \
-  --log-level 2"]
+# NOTE: o bind mount .:/app (docker-compose.yml) sobrescreve o COPY acima.
+# O bootstrap está em docker/bootstrap-passenger.sh no repo, acessível em
+# /app/docker/bootstrap-passenger.sh dentro do container.
+CMD ["bash", "/app/docker/bootstrap-passenger.sh"]
