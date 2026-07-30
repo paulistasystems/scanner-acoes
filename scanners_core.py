@@ -1754,3 +1754,65 @@ def sinal_intraday_24jul(risk_pct=1.0):
             continue
 
     return pd.DataFrame(resultados)
+
+
+# === VOLUME CONTINUIDADE — Intraday (1D data, volume breakout) ===
+
+def volume_continuidade(ativos):
+    """
+    Scanner de Volume e Continuidade — verifica se o volume confirma
+    continuidade de alta para cada ativo.
+    Critérios:
+      - Volume do dia >= 1.3x a média dos últimos 20 dias
+      - Preço atual > preço anterior (variação positiva)
+    Retorna DataFrame com status de cada ativo.
+    """
+    hoje = data_layer.session_today()
+
+    resultados = []
+    _prewarm_com_progresso(ativos, ['1d'])
+
+    LIMITE_VOLUME = 1.3
+    MEDIA_VOLUME_DIAS = 20
+
+    for symbol in ativos:
+        try:
+            df = baixar_dados(symbol, '1d', '40d')
+            if df is None or df.empty or len(df) < MEDIA_VOLUME_DIAS + 2:
+                continue
+
+            preco_atual = safe_float(df['Close'].iloc[-1])
+            preco_anterior = safe_float(df['Close'].iloc[-2])
+            volume_hoje = safe_float(df['Volume'].iloc[-1])
+
+            vol_series = df['Volume'].iloc[-MEDIA_VOLUME_DIAS - 1:-1]
+            media_volume = vol_series.mean()
+            if media_volume <= 0:
+                continue
+
+            vol_ratio = volume_hoje / media_volume
+            variacao = ((preco_atual - preco_anterior) / preco_anterior) * 100 if preco_anterior > 0 else 0.0
+
+            volume_confirma = vol_ratio >= LIMITE_VOLUME
+            preco_subiu = preco_atual > preco_anterior
+
+            if volume_confirma and preco_subiu:
+                status = "Volume confirma continuidade"
+            elif volume_confirma and not preco_subiu:
+                status = "Volume alto, preço caiu"
+            else:
+                status = "Volume não confirma"
+
+            resultados.append({
+                'Ativo': symbol.replace('.SA', ''),
+                'Preço': round(preco_atual, 2),
+                'Var %': round(variacao, 2),
+                'Volume': int(volume_hoje),
+                'Média 20d': int(media_volume),
+                'Vol vs Média': round(vol_ratio, 2),
+                'Status': status,
+            })
+        except Exception:
+            continue
+
+    return pd.DataFrame(resultados)

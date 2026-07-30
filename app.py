@@ -107,6 +107,14 @@ SCANNERS_REGISTRY = {
         "uses_profile": False,
         "uses_symbols": True,
         "group": "intraday"
+    },
+    "volume_continuidade": {
+        "name": "Volume Continuidade — Confirmação de Alta",
+        "func": scanners_core.volume_continuidade,
+        "uses_profile": False,
+        "uses_symbols": True,
+        "requires_symbols": True,
+        "group": "intraday"
     }
 }
 
