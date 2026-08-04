@@ -11,7 +11,7 @@
             var i = p.lastIndexOf('/');
             return (i >= 0 ? p.slice(0, i + 1) : '/');
         })();
-        document.write('<link rel="stylesheet" href="' + window.APP_BASE + 'style.css?v=20260723c">');
+        document.write('<link rel="stylesheet" href="' + window.APP_BASE + 'style.css?v=20260804a">');
     </script>
 </head>
 <body>
@@ -99,6 +99,11 @@
                 </div>
             </div>
 
+            <div style="margin-top: 15px;">
+                <label for="custom-symbols-input" style="display:block; margin-bottom: 4px; font-size: 13px; color: #bbb;">🔎 Filtrar por ativos (opcional) — cole os tickers separados por vírgula. Deixe vazio para varrer o mercado todo:</label>
+                <input type="text" id="custom-symbols-input" placeholder="PETR4.SA, VALE3.SA, BBDC4.SA..." style="width: 100%; max-width: 600px; padding: 8px; border-radius: 4px; border: 1px solid #555; background: #222; color: #fff; box-sizing: border-box;">
+            </div>
+
             <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 15px;">
                 <button id="btn-run-all" class="primary-btn">🔄 Atualizar Todos os Scanners</button>
                 <label style="cursor: help;" title="Ignora os ativos que estão sem dados ou com download falho no Yahoo Finance. Usar apenas se o Warmup travar em ativos problemáticos.">
@@ -140,7 +145,7 @@
     </main>
 
     <script>
-        document.write('<script src="' + window.APP_BASE + 'app.js?v=20260723c"><\/script>');
+        document.write('<script src="' + window.APP_BASE + 'app.js?v=20260804a"><\/script>');
     </script>
 </body>
 </html>

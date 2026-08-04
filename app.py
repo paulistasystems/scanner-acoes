@@ -190,27 +190,28 @@ def api_scan():
     ativos = ATIVOS_B3_AMPLIADO
 
     custom_symbols_str = request.args.get('symbols', '').strip()
-    if custom_symbols_str and s.get("uses_symbols"):
-        # Se vier lista do frontend e o scanner aceitar, usamos essa lista ao inves da completa.
-        # Format "PETR4.SA,VALE3.SA"
-        custom_symbols = [x.strip() for x in custom_symbols_str.split(',') if x.strip()]
-        if custom_symbols:
-            ativos = custom_symbols
-    elif s.get("requires_symbols"):
+    custom_symbols = [x.strip() for x in custom_symbols_str.split(',') if x.strip()] if custom_symbols_str else []
+
+    if s.get("requires_symbols") and not custom_symbols:
         # Scanners marcados como requires_symbols (ex: Monitoramento Intraday,
         # Abertura Candidatos/Confluência) não rodam contra a lista cheia do
         # mercado — exigem input explícito do usuário.
         payload = {"columns": [], "rows": [], "warming": False,
                    "requires_symbols": True}
         return jsonify(payload)
-    else:
-        # Se o modo restrito foi acionado, remove os que tiverem qualquer falha pontual
-        if exclude_failures and ready.get("ready"):
-            df_fill = data_layer.read_fill_state()
-            if not df_fill.empty:
-                filled_set = set(zip(df_fill['symbol'], df_fill['interval']))
-                intervals = data_layer.REQUIRED_INTERVALS
-                ativos = [sym for sym in ativos if all((sym, iv) in filled_set for iv in intervals)]
+
+    if custom_symbols:
+        # Há lista do frontend (campo de ativos) — usamos essa lista em vez da
+        # completa. Vale para scanners uses_symbols (intraday) E para os
+        # Swing/Legacy da página consolidada (colar tickers filtra todos).
+        ativos = custom_symbols
+    elif exclude_failures and ready.get("ready"):
+        # Modo restrito: remove os que tiverem qualquer falha pontual.
+        df_fill = data_layer.read_fill_state()
+        if not df_fill.empty:
+            filled_set = set(zip(df_fill['symbol'], df_fill['interval']))
+            intervals = data_layer.REQUIRED_INTERVALS
+            ativos = [sym for sym in ativos if all((sym, iv) in filled_set for iv in intervals)]
 
     try:
         if s["uses_profile"]:

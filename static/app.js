@@ -205,12 +205,11 @@ async function runSingle(scanner) {
     const excludeFailures = document.getElementById('cb-exclude-failures')?.checked || false;
     url += `&exclude_failures=${excludeFailures}`;
 
-    // Add custom symbols to request if scanner supports it
-    if (scanner.uses_symbols) {
-        const customSymbols = document.getElementById('custom-symbols-input')?.value.trim();
-        if (customSymbols) {
-            url += `&symbols=${encodeURIComponent(customSymbols)}`;
-        }
+    // Add custom symbols to request — filtra qualquer scanner (Swing/Legacy
+    // inclusive) aos tickers colados no campo da página consolidada.
+    const customSymbols = document.getElementById('custom-symbols-input')?.value.trim();
+    if (customSymbols) {
+        url += `&symbols=${encodeURIComponent(customSymbols)}`;
     }
 
     if (scanner.uses_profile) {
