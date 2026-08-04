@@ -70,13 +70,30 @@ subpath `/scanner/` do domínio, **idêntico ao do repo**) só repassa a chamada
 causa do travamento —
 o problema é exclusivamente a thread do Passenger).
 
-Cache write-through (`chart_cache`): o `yahoo_chart.php` também grava o JSON cru do Yahoo
-na tabela `chart_cache` do `scanner.db` (PDO_SQLITE, best-effort — falha silenciosa se
-SQLite/DB indisponível). O `data_layer._fetch_chart_direct` é **cache-first**: lê o
-`chart_cache` antes de ir à rede; a normalização (auto-adjust/tz) continua no Python, então
-o PHP "atualiza o banco direto" sem portar a lógica de indicadores (sem risco de
-divergência). O `prewarm` passa `use_cache=False` para forçar refresh; a leitura sob
-demanda usa o cache. `invalidate()` (botão refresh) limpa `chart_cache` também.
+**Sem cache além do DB.** As tabelas `scan_cache` (payload de `/api/scan`, TTL 15s) e
+`chart_cache` (JSON cru do Yahoo) foram **removidas**: cada `/api/scan` roda fresco sobre
+o `bars`, e cada fetch vai direto ao Yahoo (via proxy PHP). Razão: essas camadas de cache
+serviam snapshots de momentos distintos entre processos/workers e mascaravam se os dados
+de fato convergiram — exatamente a fonte de divergência local↔remoto. As tabelas físicas,
+se ainda existirem em um DB antigo, ficam órfãs (nenhum código as referencia) e **não são
+dropadas** por `_ensure_schema` (um warm pós-deploy rodaria o DROP enquanto o processo
+Passenger antigo ainda as referencia → 500s transitórios). Único store: `bars` +
+`fill_state` + `fetch_failures` + `warm_state`.
+
+**Aquecimento orquestrado por quem sobe/deploya:**
+- **Dev (`./run_docker.sh up`):** aquece **antes** de subir o servidor — sobe o egress
+  PHP, roda o perfil `warm` (`docker compose --profile warm run --rm warm`, `prewarm`
+  síncrono contra o volume compartilhado) e só então sobe passenger+OLS. O Passenger já
+  encontra o DB preenchido. O `docker/bootstrap-passenger.sh` (entrypoint do container
+  local) é só **rede de segurança**: se o DB estiver vazio (bare `docker compose up`
+  sem warm prévio), dispara `warm_cron.py` em background; se já aquecido, sobe lendo o
+  DB pronto (sem invalidar nem re-aquecer).
+- **Produção (`./deploy.sh`):** ao fim do upload, dispara `POST /api/warm` (aquecimento
+  **concorrente** em background — mesmo `warm_cron.py`). Como o `warm_cron` executado é o
+  ficheiro em disco (já extraído = código novo), ele já roda com a lógica nova (poda de
+  órfãos) mesmo **antes** do restart pelo DirectAdmin. O subprocesso é destacado
+  (`start_new_session`) e sobrevive ao restart. O cron do DirectAdmin continua como
+  manutenção contínua.
 
 Cron sugerido (DirectAdmin; `warm_cron.py` tem lock `fcntl` portável, dispensa `flock`):
 
@@ -86,10 +103,10 @@ Cron sugerido (DirectAdmin; `warm_cron.py` tem lock `fcntl` portável, dispensa 
     >> /home/paulista/scanner/tmp/warm_cron.log 2>&1
 ```
 
-Após cada deploy/restart, rode `warm_cron.py` manualmente uma vez (bootstrap) — até a
-primeira execução do cron o DB fica vazio e o frontend tenta o `POST /api/warm` (thread
-que morre; inofensiva). Com `fill_state > 0`, o `startup()` do frontend pula o warm e lê o
-DB direto.
+Após cada deploy, o próprio `deploy.sh` já dispara o warm (`POST /api/warm`). Falta ainda
+o **restart pelo DirectAdmin** (Stop+Start) para o processo que serve as requests pegar o
+código novo — o warm subprocesso usa código novo do disco, mas o Flask/Passenger só após o
+restart. Com `fill_state > 0`, o `startup()` do frontend pula o warm e lê o DB direto.
 
 ## What this is
 

@@ -345,5 +345,26 @@ if ! curl -fsS --connect-timeout 10 "https://paulista.dev/scanner/api/status" 2>
   echo "      A transferência de ficheiros da app via FTP foi efetuada (sem DB)."
 fi
 
+# ── 5. Dispara aquecimento concorrente (mesmo mecanismo do run_docker.sh) ────
+# POST /api/warm → warming.start_warm (worker do servidor) spawna warm_cron.py
+# como subprocesso destacado, que sobrevive ao recicle do Passenger e preenche o
+# scanner.db de produção em background. O warm_cron executado é o FICHEIRO NO
+# DISCO (já extraído = código novo), então já roda com a lógica nova (poda de
+# órfãos) mesmo antes do restart pelo DirectAdmin. O frontend faz poll de
+# /api/status. Não bloqueia o deploy.
+echo ""
+echo "==> Disparando aquecimento concorrente no remoto (POST /api/warm)..."
+sleep 1
+if curl -fsS --connect-timeout 10 -X POST "https://paulista.dev/scanner/api/warm" \
+     2>/dev/null | python3 -m json.tool 2>/dev/null; then
+  echo "   Warm remoto disparado (background). Acompanhe:"
+  echo "   curl -s https://paulista.dev/scanner/api/status | python3 -m json.tool"
+else
+  echo "   ⚠️  Aviso: não foi possível disparar /api/warm (servidor offline ou bloqueio)."
+  echo "      O cron do DirectAdmin (warm_cron.py, 10-17h seg-sex + hourly) aquece assim que rodar."
+fi
+
 echo ""
 echo "Deploy concluído (aplicação apenas; sem sync de base de dados)."
+echo "Lembrete: reinicie o app pelo DirectAdmin (Stop + Start) para o código novo"
+echo "          entrar no ar no processo que serve as requests."

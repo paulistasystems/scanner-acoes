@@ -83,7 +83,19 @@ shift || true
 
 case "$cmd" in
   up)
-    docker compose up --build -d "$@"
+    # Aquece o scanner.db (volume compartilhado) ANTES de subir o servidor, para o
+    # Passenger já encontrar o DB preenchido e nunca servir dados vazios. Idempotente:
+    # prewarm só busca o que falta + poda órfãos; num volume novo/frio é um warm
+    # completo (~minutos), num volume já quente é incremental (rápido).
+    echo ""
+    echo "==> 1. Subindo o egress PHP (proxy Yahoo)..."
+    docker compose up -d --build php
+    echo ""
+    echo "==> 2. Aquecendo o scanner.db ANTES do servidor (warm síncrono no volume)..."
+    docker compose --profile warm run --rm warm
+    echo ""
+    echo "==> 3. Subindo o servidor (passenger + ols) lendo o DB já aquecido..."
+    docker compose up -d --build "$@"
     # O cache de IP do extprocessor do OLS fica obsoleto quando
     # passenger/php são recriados e recebem outro IP. Reload graceful do
     # LSWS força re-resolução do hostname do backend (sem downtime).
