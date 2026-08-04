@@ -682,6 +682,37 @@ def _upsert_bars(symbol, interval, df):
         conn.commit()
 
 
+def _trim_bars_to_window(symbol, interval, df_fetched):
+    """Remove do DB barras de (symbol, interval) cujo timestamp está FORA da
+    janela retornada pelo Yahoo no último fetch (df_fetched).
+
+    O banco é "upsert": barras que o Yahoo RETORNA sobrescrevem as antigas (mesmo
+    ts), porém barras que o Yahoo DEIXOU de retornar (phantoms de um warm
+    anterior — off-grid, volume 0, ou candles fora do `range` atual) PERMANECEM
+    na tabela como órfãs. Isto polui a série lida por `get_bars` com timestamp
+    inválidos/volumes falsos e — pior — desloca a contagem de barras dentro da
+    janela de leitura, alterando o SEED do ADX (Wilder) e divergindo os scans
+    entre servidores que aqueceram em instantes diferentes. Aqui poda tudo o que
+    não está dentro de [min, max] do fetch fresco, alinhando o DB ao snapshot
+    atual do Yahoo e tornando a série determinística entre local e remoto.
+    """
+    if df_fetched is None or df_fetched.empty:
+        return
+    try:
+        lo = df_fetched.index.min().isoformat()
+        hi = df_fetched.index.max().isoformat()
+    except Exception:
+        return
+    with _lock:
+        conn = _connect()
+        conn.execute(
+            "DELETE FROM bars WHERE symbol=? AND interval=? "
+            "AND (ts < ? OR ts > ?)",
+            (symbol, interval, lo, hi),
+        )
+        conn.commit()
+
+
 def _read_bars(symbol, interval):
     with _lock:
         rows = _connect().execute(
@@ -778,6 +809,13 @@ def get_bars(symbol, interval, period):
         df, _err = _fetch_from_yahoo(symbol, interval, MAX_PERIOD.get(interval, period))
         if df is not None and not df.empty:
             _upsert_bars(symbol, interval, df)
+            # Poda órfãos de fetchs antigos só quando o fetch cobre a janela
+            # esperada do MAX_PERIOD (proteção contra chart_cache com payload
+            # mais estreito que levaria a um trim agressivo). Garante que o
+            # banco reflita o snapshot atual do Yahoo — converge local/remoto.
+            exp_days = _PERIOD_DAYS.get(MAX_PERIOD.get(interval, period))
+            if exp_days and (df.index.max() - df.index.min()) >= timedelta(days=exp_days - 2):
+                _trim_bars_to_window(symbol, interval, df)
             _set_fill_state(symbol, interval)
 
     df = _read_bars(symbol, interval)
@@ -1235,6 +1273,7 @@ def prewarm(symbols, intervals, attempts=3, progress=None):
                                     attempts, use_cache=False)
         if df is not None and not df.empty:
             _upsert_bars(symbol, interval, df)
+            _trim_bars_to_window(symbol, interval, df)
             _set_fill_state(symbol, interval)
             _clear_failure(symbol, interval)
             return symbol, interval, True, None
