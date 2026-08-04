@@ -566,32 +566,59 @@ def _upsert_bars(symbol, interval, df):
         conn.commit()
 
 
+# Mínimo de barras que um fetch "completo" retorna por intervalo. Abixo disto o
+# fetch é considerado parcial (truncamento/rate-limit do Yahoo) e NÃO poda órfãos
+# — um fetch parcial poderia marcar como órfãs barras que o Yahoo deixou de incluir
+# só dessa vez, deletando legítimas. Valores bem abaixo do count típico do Yahoo.
+_MIN_BARS_COMPLETE = {"1d": 150, "1h": 150, "30m": 120, "15m": 12}
+
+
 def _trim_bars_to_window(symbol, interval, df_fetched):
-    """Remove do DB barras de (symbol, interval) cujo timestamp está FORA da
-    janela retornada pelo Yahoo no último fetch (df_fetched).
+    """Alinha o DB ao snapshot atual do Yahoo para a série lida por `get_bars` ser
+    determinística entre servidores (convergência local↔remoto).
 
     O banco é "upsert": barras que o Yahoo RETORNA sobrescrevem as antigas (mesmo
     ts), porém barras que o Yahoo DEIXOU de retornar (phantoms de um warm
-    anterior — off-grid, volume 0, ou candles fora do `range` atual) PERMANECEM
-    na tabela como órfãs. Isto polui a série lida por `get_bars` com timestamp
-    inválidos/volumes falsos e — pior — desloca a contagem de barras dentro da
-    janela de leitura, alterando o SEED do ADX (Wilder) e divergindo os scans
-    entre servidores que aqueceram em instantes diferentes. Aqui poda tudo o que
-    não está dentro de [min, max] do fetch fresco, alinhando o DB ao snapshot
-    atual do Yahoo e tornando a série determinística entre local e remoto.
+    anterior — off-grid, volume 0, ou candles que sumiram) PERMANECEM como órfãs.
+    Órfãos DENTRO da janela [min,max] do fetch poluem a série, deslocam a contagem
+    de barras e alteram o SEED do ADX (Wilder) — exatamente a causa da divergência
+    de indicadores entre DBs aquecidos em instantes diferentes.
+
+    Aqui poda:
+      (a) órfãos DENTRO de [min,max]: barras armazenadas cujo ts o fetch fresco
+          NÃO contém (formato isoformat é idêntico ao do upsert — same code path,
+          verificado byte-a-byte; sem risco de deletar legítimas);
+      (b) tudo FORA de [min,max] (limpeza de histórico além do fetch).
+
+    Só poda se o fetch for "completo" (len >= _MIN_BARS_COMPLETE) para não deletar
+    barras legítimas num fetch parcial/truncado.
     """
     if df_fetched is None or df_fetched.empty:
+        return
+    if len(df_fetched) < _MIN_BARS_COMPLETE.get(interval, 0):
         return
     try:
         lo = df_fetched.index.min().isoformat()
         hi = df_fetched.index.max().isoformat()
+        fresh_ts = {t.isoformat() for t in df_fetched.index}
     except Exception:
         return
     with _lock:
         conn = _connect()
+        # (a) órfãos dentro da janela: ts em [lo,hi] que o fetch não trouxe.
+        rows = conn.execute(
+            "SELECT ts FROM bars WHERE symbol=? AND interval=? AND ts >= ? AND ts <= ?",
+            (symbol, interval, lo, hi),
+        ).fetchall()
+        orphans = [r[0] for r in rows if r[0] not in fresh_ts]
+        if orphans:
+            conn.executemany(
+                "DELETE FROM bars WHERE symbol=? AND interval=? AND ts = ?",
+                [(symbol, interval, t) for t in orphans],
+            )
+        # (b) além da janela do fetch (histórico que o Yahoo já não cobre).
         conn.execute(
-            "DELETE FROM bars WHERE symbol=? AND interval=? "
-            "AND (ts < ? OR ts > ?)",
+            "DELETE FROM bars WHERE symbol=? AND interval=? AND (ts < ? OR ts > ?)",
             (symbol, interval, lo, hi),
         )
         conn.commit()
@@ -693,12 +720,10 @@ def get_bars(symbol, interval, period):
         df, _err = _fetch_from_yahoo(symbol, interval, MAX_PERIOD.get(interval, period))
         if df is not None and not df.empty:
             _upsert_bars(symbol, interval, df)
-            # Poda órfãos de fetchs antigos só quando o fetch cobre a janela
-            # esperada do MAX_PERIOD (garante que não poda legítimos num fetch
-            # curto). Alinha o banco ao snapshot atual do Yahoo — converge local/remoto.
-            exp_days = _PERIOD_DAYS.get(MAX_PERIOD.get(interval, period))
-            if exp_days and (df.index.max() - df.index.min()) >= timedelta(days=exp_days - 2):
-                _trim_bars_to_window(symbol, interval, df)
+            # Poda órfãos (dentro e fora da janela) alinhando o DB ao snapshot
+            # atual do Yahoo — converge local/remoto. O guard de completude
+            # (count mínimo) vive dentro de _trim_bars_to_window.
+            _trim_bars_to_window(symbol, interval, df)
             _set_fill_state(symbol, interval)
 
     df = _read_bars(symbol, interval)

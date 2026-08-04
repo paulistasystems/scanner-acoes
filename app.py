@@ -390,7 +390,9 @@ def api_warm_cron_status():
 
 @app.route('/api/warm', methods=['POST'])
 def api_warm():
-    req = request.get_json() or {}
+    # force=True + silent=True: aceita POST sem Content-Type (ex.: curl -X POST do
+    # deploy.sh) — get_json() puro levanta 415 Unsupported Media Type nesses casos.
+    req = request.get_json(force=True, silent=True) or {}
     intervals_str = req.get('intervals', '1d,1h,30m,15m')
     intervals = [i.strip() for i in intervals_str.split(',') if i.strip()]
     ativos = ATIVOS_B3_AMPLIADO
@@ -409,7 +411,7 @@ def api_retry_failures():
 
 @app.route('/api/retry_symbol', methods=['POST'])
 def api_retry_symbol():
-    req = request.get_json() or {}
+    req = request.get_json(force=True, silent=True) or {}
     sym = req.get('symbol', '')
     if not sym:
         return jsonify({"success": False, "error": "Nenhum símbolo informado"}), 400

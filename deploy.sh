@@ -81,6 +81,33 @@ io_extract_app() {
 
 check_deps
 
+# 0. Dispara o aquecimento do remoto ANTES de tudo. O warm_cron roda como subprocesso
+#    destacado (sobrevive ao recycle do Passenger) e em background — portanto preenche
+#    o scanner.db CONCORRENTEMENTE com o upload, não bloqueia o deploy e já está aquecendo
+#    enquanto os ficheiros sobem. Idempotente (lock fcntl): se já houver um warm ativo
+#    (ex.: cron do DirectAdmin), o POST devolve started=false e segue sem erro. Omitido
+#    no fluxo --reset-db (ele apaga o DB e dispara o próprio warm mais abaixo).
+case " $* " in
+  *" --reset-db "*) _SKIP_EARLY_WARM=1 ;;
+  *)                _SKIP_EARLY_WARM=0 ;;
+esac
+if [ "$_SKIP_EARLY_WARM" -eq 0 ]; then
+  echo ""
+  echo "==> 0. Disparando aquecimento concorrente no remoto (background, antes do upload)..."
+  # Content-Type: application/json é obrigatório enquanto o handler usar get_json()
+  # (sem force=True ele levanta 415 em POST sem JSON). O corpo {} serve.
+  _warm_resp="$(curl -fsS --connect-timeout 10 --max-time 20 -X POST \
+        -H 'Content-Type: application/json' -d '{}' \
+        "https://paulista.dev/scanner/api/warm" 2>/dev/null || true)"
+  if printf '%s' "$_warm_resp" | python3 -c "import sys,json; sys.exit(0 if json.load(sys.stdin).get('started') else 1)" 2>/dev/null; then
+    echo "   Warm remoto disparado (background). Aquece enquanto o upload corre."
+  else
+    echo "   Warm já ativo (cron) ou /api/warm indisponível — segue; o cron cobre."
+  fi
+  unset _warm_resp
+fi
+unset _SKIP_EARLY_WARM
+
 # 1. Stage — lista explícita de ficheiros da app (sem DB, sem venv, sem dumps)
 echo ""
 echo "==> Montando stage (app only)..."
@@ -345,26 +372,9 @@ if ! curl -fsS --connect-timeout 10 "https://paulista.dev/scanner/api/status" 2>
   echo "      A transferência de ficheiros da app via FTP foi efetuada (sem DB)."
 fi
 
-# ── 5. Dispara aquecimento concorrente (mesmo mecanismo do run_docker.sh) ────
-# POST /api/warm → warming.start_warm (worker do servidor) spawna warm_cron.py
-# como subprocesso destacado, que sobrevive ao recicle do Passenger e preenche o
-# scanner.db de produção em background. O warm_cron executado é o FICHEIRO NO
-# DISCO (já extraído = código novo), então já roda com a lógica nova (poda de
-# órfãos) mesmo antes do restart pelo DirectAdmin. O frontend faz poll de
-# /api/status. Não bloqueia o deploy.
-echo ""
-echo "==> Disparando aquecimento concorrente no remoto (POST /api/warm)..."
-sleep 1
-if curl -fsS --connect-timeout 10 -X POST "https://paulista.dev/scanner/api/warm" \
-     2>/dev/null | python3 -m json.tool 2>/dev/null; then
-  echo "   Warm remoto disparado (background). Acompanhe:"
-  echo "   curl -s https://paulista.dev/scanner/api/status | python3 -m json.tool"
-else
-  echo "   ⚠️  Aviso: não foi possível disparar /api/warm (servidor offline ou bloqueio)."
-  echo "      O cron do DirectAdmin (warm_cron.py, 10-17h seg-sex + hourly) aquece assim que rodar."
-fi
-
 echo ""
 echo "Deploy concluído (aplicação apenas; sem sync de base de dados)."
+echo "O aquecimento foi disparado no passo 0 (roda em background). Acompanhe:"
+echo "  curl -s https://paulista.dev/scanner/api/status | python3 -m json.tool"
 echo "Lembrete: reinicie o app pelo DirectAdmin (Stop + Start) para o código novo"
 echo "          entrar no ar no processo que serve as requests."
