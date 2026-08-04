@@ -16,10 +16,9 @@ from symbols_fallback import ATIVOS_B3_AMPLIADO
 
 app = Flask(__name__, static_folder='static')
 
-# Cache curto de resultados de /api/scan (TTL ~15s), persistido em DB pelo
-# data_layer.scan_cache_*: os vários workers do Passenger compartilham o mesmo
-# cache (a versão in-memory era por-processo e servia state divergente).
-# Invalidado pelo warm/refresh via data_layer.invalidate_scan_cache().
+# /api/scan roda o scanner fresco a cada request (sem cache de payload) — assim
+# qualquer mudança de deploy/data tem efeito imediato e local e remoto leem o
+# mesmo estado do banco. (Memória: no_scan_cache.)
 
 # Map of available scanners
 SCANNERS_REGISTRY = {
@@ -186,13 +185,6 @@ def api_scan():
             "error": ready.get("message") or "Dados incompletos — rode o warm.",
         }), 503
 
-    # Cache curto (DB, multi-processo): polls concorrentes do mesmo scanner
-    # retornam o payload em cache em vez de re-rodar o scan pesado.
-    cache_key = data_layer.scan_cache_key(scanner_id, request.args)
-    cached = data_layer.scan_cache_get(cache_key)
-    if cached is not None:
-        return jsonify(cached)
-
     # Prepare args
     from symbols_fallback import ATIVOS_B3_AMPLIADO
     ativos = ATIVOS_B3_AMPLIADO
@@ -210,7 +202,6 @@ def api_scan():
         # mercado — exigem input explícito do usuário.
         payload = {"columns": [], "rows": [], "warming": False,
                    "requires_symbols": True}
-        data_layer.scan_cache_put(cache_key, payload)
         return jsonify(payload)
     else:
         # Se o modo restrito foi acionado, remove os que tiverem qualquer falha pontual
@@ -272,7 +263,6 @@ def api_scan():
                 
         if df is None or df.empty:
             payload = {"columns": [], "rows": [], "warming": False}
-            data_layer.scan_cache_put(cache_key, payload)
             return jsonify(payload)
             
         columns = [{"key": str(c), "label": str(c)} for c in df.columns]
@@ -282,7 +272,6 @@ def api_scan():
         rows = clean_nan(rows)
         
         payload = {"columns": columns, "rows": rows, "warming": False}
-        data_layer.scan_cache_put(cache_key, payload)
         return jsonify(payload)
     except Exception as e:
         import traceback
@@ -405,7 +394,6 @@ def api_warm():
     intervals_str = req.get('intervals', '1d,1h,30m,15m')
     intervals = [i.strip() for i in intervals_str.split(',') if i.strip()]
     ativos = ATIVOS_B3_AMPLIADO
-    data_layer.invalidate_scan_cache()
     started = warming.start_warm(ativos, intervals)
     return jsonify({"started": started, "status": warming.status()})
 

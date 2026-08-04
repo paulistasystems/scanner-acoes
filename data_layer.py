@@ -147,30 +147,12 @@ def _ensure_schema():
             );
             INSERT OR IGNORE INTO warm_state (id, running) VALUES (1, 0);
 
-            -- Cache bruto do Yahoo Chart API, gravado pelo proxy PHP (write-through):
-            -- yahoo_chart.php UPSERT aqui o JSON cru a cada fetch. O Python só LÊ
-            -- (data_layer._fetch_chart_direct, cache-first) e faz a normalização —
-            -- assim o PHP é quem "atualiza o banco direto", sem portar a normalização
-            -- (auto-adjust/tz/índice) para o PHP. Sem risco de divergência dos indicadores.
-            CREATE TABLE IF NOT EXISTS chart_cache (
-                symbol     TEXT NOT NULL,
-                interval   TEXT NOT NULL,
-                fetched_at TEXT NOT NULL,
-                payload    TEXT NOT NULL,   -- JSON cru do /v8/finance/chart
-                PRIMARY KEY (symbol, interval)
-            );
-
-            -- Cache de curta duração (TTL ~15s) dos resultados de /api/scan,
-            -- persistido em DB para ser consistente entre os vários processos
-            -- do Passenger (a versão in-memory era por-processo e servia state
-            -- divergente em diferentes workers). payload = JSON do payload que
-            -- /api/scan devolve; key = "<scanner_id>&<k>=<v>&...". O warm/refresh
-            -- invalida tudo.
-            CREATE TABLE IF NOT EXISTS scan_cache (
-                key       TEXT PRIMARY KEY,
-                ts        REAL NOT NULL,      -- time.time() do python (epoch)
-                payload   TEXT NOT NULL       -- JSON do payload de /api/scan
-            );
+            -- NOTA: scan_cache e chart_cache foram removidos do código (o `bars`/
+            -- `fill_state` são a única fonte de verdade). As tabelas físicas, se
+            -- existirem de um DB antigo, são deixadas intactas (órfãs, sem qualquer
+            -- referência no código) — NÃO as dropamos aqui: um warm pós-deploy rodaria
+            -- este _ensure_schema (DROP) enquanto o processo Passenger ANTIGO ainda
+            -- as referencia, causando 500s transitórios em /api/scan até o restart.
             """
         )
         conn.commit()
@@ -399,78 +381,11 @@ def _clear_failure(symbol, interval):
 
 def invalidate():
     """Força a próxima leitura a rebuscar no yfinance (refresh manual).
-    Limpa o fill_state e o chart_cache (write-through do PHP); os candles em `bars`
-    são atualizados via upsert no refill."""
+    Limpa o fill_state; os candles em `bars` são atualizados via upsert no refill."""
     _ensure_schema()
     with _lock:
         conn = _connect()
         conn.execute("DELETE FROM fill_state")
-        conn.execute("DELETE FROM chart_cache")
-        conn.execute("DELETE FROM scan_cache")
-        conn.commit()
-
-
-# ----------------------------- scan_cache (DB, multi-processo) -----------------------------
-# TTL curto (~15s): pads concorrentes do mesmo scanner (várias abas) devolvem o
-# payload em cache em vez de re-rodar o scan pesado sobre ~300 ativos × 4 TFs.
-# Persistido em DB (e não in-memory por processo) porque o Passenger roda vários
-# workers — assim todos enxergam o mesmo cache e não há divergência de estado.
-SCAN_CACHE_TTL = 15  # segundos
-
-
-def scan_cache_key(scanner_id, args):
-    """Chave estável para /api/scan: scanner_id + pares k=v ordenados (sem 'scanner').
-    Espelha o helper que vivia em app.py para manter o mesmo espaço de chaves."""
-    parts = [scanner_id]
-    for k in sorted(args.keys()):
-        if k == "scanner":
-            continue
-        parts.append(f"{k}={args.get(k)}")
-    return "&".join(parts)
-
-
-def scan_cache_get(key):
-    """Devolve o payload do cache se fresco (dentro do TTL), senão None e limpa-o."""
-    _ensure_schema()
-    with _lock:
-        row = _connect().execute(
-            "SELECT ts, payload FROM scan_cache WHERE key=?", (key,)
-        ).fetchone()
-        if not row:
-            return None
-        ts, payload = row
-        if time.time() - ts > SCAN_CACHE_TTL:
-            _connect().execute("DELETE FROM scan_cache WHERE key=?", (key,))
-            _connect().commit()
-            return None
-    try:
-        return json.loads(payload)
-    except Exception:
-        return None
-
-
-def scan_cache_put(key, payload):
-    """Salva o payload JSONável em scan_cache (upsert), marcando a hora atual."""
-    _ensure_schema()
-    try:
-        payload_json = json.dumps(payload, default=str)
-    except Exception:
-        return
-    with _lock:
-        conn = _connect()
-        conn.execute(
-            "INSERT OR REPLACE INTO scan_cache(key, ts, payload) VALUES (?,?,?)",
-            (key, time.time(), payload_json),
-        )
-        conn.commit()
-
-
-def invalidate_scan_cache():
-    """Esvazia todo o cache de resultados de scan (chamado pelo warm/refresh)."""
-    _ensure_schema()
-    with _lock:
-        conn = _connect()
-        conn.execute("DELETE FROM scan_cache")
         conn.commit()
 
 
@@ -494,31 +409,11 @@ _CHART_RANGE = {
 _INTERVAL_DEFAULT_RANGE = {"1d": "1y", "1h": "6mo", "30m": "1mo", "15m": "5d"}
 
 
-def _read_chart_cache(symbol, interval):
-    """Lê o payload cru do Yahoo gravado pelo proxy PHP (write-through em chart_cache).
-    Retorna o dict (JSON parsed) ou None. Quem ESCREVE o cache é o PHP
-    (yahoo_chart.php); o Python só lê."""
-    _ensure_schema()
-    with _lock:
-        row = _connect().execute(
-            "SELECT payload FROM chart_cache WHERE symbol=? AND interval=?",
-            (symbol, interval),
-        ).fetchone()
-    if not row:
-        return None
-    try:
-        import json
-        return json.loads(row[0])
-    except Exception:
-        return None
-
-
 def _parse_chart_payload(payload, symbol, interval):
     """Normaliza o JSON cru do /v8/finance/chart em DataFrame (Open/High/Low/Close/
     Volume) com convenção de tz idêntica ao yfinance (diário = índice tz-naive
     meia-noite; intradiário = tz-aware UTC). OHL reescalado pelo ratio
-    adjclose/close (paridade com yf.download(auto_adjust=True)). Compartilhado entre
-    o caminho live (proxy/Yahoo) e o cache (chart_cache gravado pelo PHP)."""
+    adjclose/close (paridade com yf.download(auto_adjust=True))."""
     chart = payload.get("chart") or {}
     results = chart.get("result")
     if not results:
@@ -567,24 +462,13 @@ def _parse_chart_payload(payload, symbol, interval):
     return df, None
 
 
-def _fetch_chart_direct(symbol, interval, period, use_cache=True):
+def _fetch_chart_direct(symbol, interval, period):
     """Baixa candles direto do Yahoo Chart API v8 (sem cookie/crumb).
 
     Retorna (df, erro): df com colunas Open/High/Low/Close/Volume e convencao de tz
     identica ao yfinance (diario = index tz-naive meia-noite; intradiario = index
     tz-aware UTC), para manter `_is_filled`/leitura compativeis com os dados ja no banco.
     OHL eh reescalado pelo ratio adjclose/close para paridade com `yf.download(auto_adjust=True)`."""
-    # Cache-first: se use_cache e houver payload cru em chart_cache (gravado pelo
-    # proxy PHP via write-through), normaliza a partir dele sem ir à rede. O passo de
-    # aquisição (prewarm) passa use_cache=False para forçar refresh; a leitura sob
-    # demanda usa o cache.
-    if use_cache:
-        cached = _read_chart_cache(symbol, interval)
-        if cached is not None:
-            dfc, _ = _parse_chart_payload(cached, symbol, interval)
-            if dfc is not None and not dfc.empty:
-                return dfc, None
-        # cache ausente/ilegível -> cai para o fetch normal (refresca o cache via PHP)
     # period1/period2 (epocas) dao a janela exata em dias e respeitam o limite por
     # intervalo (1d=365, 1h=75<=730, 30m=45<=60, 15m=5<=60). range-token so cai como
     # fallback se o period nao for conhecido.
@@ -623,14 +507,14 @@ def _fetch_chart_direct(symbol, interval, period, use_cache=True):
     return _parse_chart_payload(payload, symbol, interval)
 
 
-def _fetch_from_yahoo(symbol, interval, period, attempts=3, use_cache=True):
+def _fetch_from_yahoo(symbol, interval, period, attempts=3):
     """Baixa candles do Yahoo. Caminho primario = Chart API v8 (direto, ou via proxy
     PHP quando SCANNER_CHART_URL esta setada). Fallback = yf.download — mas SO quando
     o egress NAO e o proxy PHP: no servidor o crumb do yfinance recebe 401 e o
     fallback so perde ~30-60s por simbolo, travando o warm. Com egress PHP ativo,
     devolve vazio rapido (prewarm registra e segue) em vez de martelar yfinance.
     Retorna (df, erro): df vazio + mensagem se todos os caminhos falharem."""
-    df, err = _fetch_chart_direct(symbol, interval, period, use_cache=use_cache)
+    df, err = _fetch_chart_direct(symbol, interval, period)
     if df is not None and not df.empty:
         return df, None
 
@@ -810,9 +694,8 @@ def get_bars(symbol, interval, period):
         if df is not None and not df.empty:
             _upsert_bars(symbol, interval, df)
             # Poda órfãos de fetchs antigos só quando o fetch cobre a janela
-            # esperada do MAX_PERIOD (proteção contra chart_cache com payload
-            # mais estreito que levaria a um trim agressivo). Garante que o
-            # banco reflita o snapshot atual do Yahoo — converge local/remoto.
+            # esperada do MAX_PERIOD (garante que não poda legítimos num fetch
+            # curto). Alinha o banco ao snapshot atual do Yahoo — converge local/remoto.
             exp_days = _PERIOD_DAYS.get(MAX_PERIOD.get(interval, period))
             if exp_days and (df.index.max() - df.index.min()) >= timedelta(days=exp_days - 2):
                 _trim_bars_to_window(symbol, interval, df)
@@ -1267,10 +1150,9 @@ def prewarm(symbols, intervals, attempts=3, progress=None):
         if _is_filled(symbol, interval, now):
             return symbol, interval, True, None
 
-        # use_cache=False: prewarm é aquisição — precisa de dados frescos (e
-        # atualiza o chart_cache via proxy PHP como efeito colateral do fetch).
+        # prewarm é aquisição — busca fresco contra o Yahoo (via proxy PHP).
         df, err = _fetch_from_yahoo(symbol, interval, MAX_PERIOD.get(interval, "1y"),
-                                    attempts, use_cache=False)
+                                    attempts)
         if df is not None and not df.empty:
             _upsert_bars(symbol, interval, df)
             _trim_bars_to_window(symbol, interval, df)
