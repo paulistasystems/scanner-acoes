@@ -131,6 +131,22 @@ def _ensure_schema():
                 PRIMARY KEY (symbol, interval)
             );
 
+            -- Barras diárias recentes que o Yahoo serviu como None (edge do CDN não
+            -- backfillou o candle oficial). NUNCA aceitamos/servimos uma barra None:
+            -- ela entra nesta fila e é re-tentada a cada warm (loop "enqueue forever"
+            -- via cron a cada 10min) até o Yahoo devolver o valor real. As tentativas
+            -- aparecem no painel de Falhas (tentativas subindo = ainda pendente).
+            CREATE TABLE IF NOT EXISTS bar_failures (
+                symbol          TEXT NOT NULL,
+                interval        TEXT NOT NULL,   -- hoje sempre '1d' (só o diário desync)
+                date            TEXT NOT NULL,   -- YYYY-MM-DD (pregão B3)
+                attempts        INTEGER NOT NULL DEFAULT 1,
+                last_error      TEXT,
+                last_attempt_at TEXT,
+                resolved_at     TEXT,            -- não-NULL quando finalmente veio valor
+                PRIMARY KEY (symbol, interval, date)
+            );
+
             -- Estado do warm em disco (nao em memoria): o Phusion Passenger roda varios
             -- processos; assim todos enxergam o mesmo running/done/total e o frontend
             -- pode esperar o aquecimento de forma confiavel. heartbeat_at permite
@@ -379,6 +395,179 @@ def _clear_failure(symbol, interval):
         conn.commit()
 
 
+# ----------------------------- Bar failures (never-None) -----------------------------
+# Barras diárias recentes que o Yahoo serviu como None. Entram numa fila re-tentada
+# a cada warm (cron a cada 10min = "enqueue forever") até o Yahoo devolver o valor
+# real do pregão. Tentativas visíveis no painel de Falhas. Nunca persistimos None.
+
+def _record_bar_failure(symbol, interval, date_str, err=""):
+    """Registra/incrementa uma barra diária pendente (Yahoo devolveu None)."""
+    _ensure_schema()
+    with _lock:
+        conn = _connect()
+        conn.execute(
+            """INSERT INTO bar_failures(symbol, interval, date, attempts, last_error, last_attempt_at)
+               VALUES(?,?,?,1,?,?)
+               ON CONFLICT(symbol, interval, date) DO UPDATE SET
+                 attempts = bar_failures.attempts + 1,
+                 last_error = excluded.last_error,
+                 last_attempt_at = excluded.last_attempt_at,
+                 resolved_at = NULL""",
+            (symbol, interval, date_str, (err or "")[:200], _now_brt().isoformat()),
+        )
+        conn.commit()
+
+
+def _resolve_bar_failure(symbol, interval, date_str):
+    """Barra finalmente veio com valor real — marca resolvida."""
+    _ensure_schema()
+    with _lock:
+        conn = _connect()
+        conn.execute(
+            "UPDATE bar_failures SET resolved_at=? WHERE symbol=? AND interval=? AND date=?",
+            (_now_brt().isoformat(), symbol, interval, date_str),
+        )
+        conn.commit()
+
+
+def _record_deficient_bars(symbol, interval, df, now):
+    """Após um fetch diário: (1) resolve bar_failures pendentes cuja data agora
+    veio populada (Yahoo backfillou), e (2) enfileira novas barras deficientes
+    (Yahoo serviu None) recentes e já assentadas (>=2 dias — hoje/ontem vir None é
+    normal, ainda vivas) para retry. Só diário (intraday não sofre o desync de edge)."""
+    if interval != "1d" or df is None or df.empty:
+        return
+
+    # (1) resolve pendências cuja data agora está presente e populada neste fetch.
+    try:
+        present_dates = set(df.index.strftime("%Y-%m-%d"))
+    except Exception:
+        present_dates = set()
+    if present_dates:
+        with _lock:
+            conn = _connect()
+            pending = [r[0] for r in conn.execute(
+                "SELECT date FROM bar_failures WHERE symbol=? AND interval='1d' AND resolved_at IS NULL",
+                (symbol,),
+            ).fetchall()]
+            if pending:
+                now_iso = _now_brt().isoformat()
+                for d in pending:
+                    if d in present_dates:
+                        conn.execute(
+                            "UPDATE bar_failures SET resolved_at=? WHERE symbol=? AND interval='1d' AND date=?",
+                            (now_iso, symbol, d),
+                        )
+                conn.commit()
+
+    # (2) registra novas deficiências. Qualquer barra None que NÃO seja o pregão
+    # de hoje (ainda vivo/em settle) é um erro e entra na fila de retry — nunca
+    # aceitamos None. Janela até 30d: mais velho que isso o Yahoo serve estável em
+    # toda edge (o desync só afeta barras recentes).
+    try:
+        deficient = df.attrs.get("deficient_ts", []) or []
+    except Exception:
+        deficient = []
+    if not deficient:
+        return
+    today = now.date()
+    for ts_iso in deficient:
+        try:
+            d = ts_iso[:10]
+            dd = datetime.fromisoformat(d + "T00:00:00").date()
+        except Exception:
+            continue
+        age = (today - dd).days
+        if 1 <= age <= 30:
+            _record_bar_failure(symbol, "1d", d, "barra None (Yahoo)")
+
+
+def _fetch_one_daily_bar(symbol, date_str):
+    """Busca UMA barra diária (date_str YYYY-MM-DD) via janela curta, tentando
+    variações 100% Yahoo: egress proxy (query1) e direto query2 (outra edge).
+    Retorna dict {ts,open,high,low,close,volume} populado, ou None se o Yahoo
+    continuar servindo None para esta data em todos os caminhos."""
+    try:
+        d = datetime.fromisoformat(date_str + "T00:00:00")
+    except Exception:
+        return None
+    p1 = int((d - timedelta(days=7)).timestamp())
+    p2 = int((d + timedelta(days=2)).timestamp())
+
+    targets = []
+    egress = os.environ.get("SCANNER_CHART_URL", "").strip()
+    if egress:
+        targets.append((egress, {"symbol": symbol, "interval": "1d", "period1": p1, "period2": p2}))
+    targets.append(
+        (f"https://query2.finance.yahoo.com/v8/finance/chart/{quote(symbol, safe='')}",
+         {"interval": "1d", "period1": p1, "period2": p2})
+    )
+
+    for url, params in targets:
+        try:
+            resp = requests.get(url, params=params, headers={"User-Agent": _CHART_UA}, timeout=20)
+            if resp.status_code != 200:
+                continue
+            df, _err = _parse_chart_payload(resp.json(), symbol, "1d")
+            if df is None or df.empty:
+                continue
+            day = df[df.index.strftime("%Y-%m-%d") == date_str]
+            if day.empty:
+                continue
+            r = day.iloc[-1]
+            if pd.notna(r["Close"]) and pd.notna(r["Volume"]) and float(r["Volume"]) > 0:
+                ts = day.index[-1]
+                return {
+                    "ts": ts,
+                    "open": float(r["Open"]), "high": float(r["High"]), "low": float(r["Low"]),
+                    "close": float(r["Close"]), "volume": float(r["Volume"]),
+                }
+        except Exception:
+            continue
+    return None
+
+
+def _retry_bar_failures():
+    """Re-tenta todas as barras diárias pendentes. Chamado no início de cada prewarm
+    (cron a cada 10min) — ESTE é o loop "enqueue forever": a cada ciclo re-questions
+    o Yahoo por cada barra None, até ele backfillar. Resolve (upsert + marca) em
+    sucesso; incrementa tentativas em falha (visível no falhas). Retorna n resolvidas."""
+    _ensure_schema()
+    with _lock:
+        rows = _connect().execute(
+            "SELECT symbol, date FROM bar_failures WHERE resolved_at IS NULL"
+        ).fetchall()
+    if not rows:
+        return 0
+    resolved = 0
+    for symbol, date in rows:
+        bar = _fetch_one_daily_bar(symbol, date)
+        if bar is not None:
+            one = pd.DataFrame(
+                [{"Open": bar["open"], "High": bar["high"], "Low": bar["low"],
+                  "Close": bar["close"], "Volume": bar["volume"]}],
+                index=pd.DatetimeIndex([bar["ts"]]),
+            )
+            _upsert_bars(symbol, "1d", one)
+            _resolve_bar_failure(symbol, "1d", date)
+            _clear_failure(symbol, "1d")
+            resolved += 1
+        else:
+            _record_bar_failure(symbol, "1d", date, "ainda None após retry")
+    return resolved
+
+
+def list_bar_failures():
+    """Snapshot das barras diárias pendentes (não resolvidas) para o painel de Falhas."""
+    _ensure_schema()
+    with _lock:
+        rows = _connect().execute(
+            "SELECT symbol, date, attempts, last_attempt_at FROM bar_failures "
+            "WHERE resolved_at IS NULL ORDER BY attempts DESC, date DESC"
+        ).fetchall()
+    return rows
+
+
 def invalidate():
     """Força a próxima leitura a rebuscar no yfinance (refresh manual).
     Limpa o fill_state; os candles em `bars` são atualizados via upsert no refill."""
@@ -456,9 +645,21 @@ def _parse_chart_payload(payload, symbol, interval):
             df[c] = df[c] * ratio
         df["Close"] = adj
 
+    # Barras "deficientes": timestamp presente no payload mas TODO OHLCV None (o
+    # edge do Yahoo serviu o candle vazio — ex.: oficial de um pregão recente ainda
+    # não backfillou para este IP). dropna as removeria silenciosamente; capturamos
+    # os ts para a fila de retry (bar_failures) — o scanner NUNCA aceita uma barra
+    # diária recente como None. df.attrs sobrevive até o caller (antes de slicing).
+    try:
+        _all_none_mask = df[["Open", "High", "Low", "Close", "Volume"]].isna().all(axis=1)
+        deficient_ts = [t.isoformat() for t in df.index[_all_none_mask]]
+    except Exception:
+        deficient_ts = []
+
     df = df.dropna(how="all")
     if df.empty:
         return pd.DataFrame(), "chart all-nan"
+    df.attrs["deficient_ts"] = deficient_ts
     return df, None
 
 
@@ -725,6 +926,7 @@ def get_bars(symbol, interval, period):
             # (count mínimo) vive dentro de _trim_bars_to_window.
             _trim_bars_to_window(symbol, interval, df)
             _set_fill_state(symbol, interval)
+            _record_deficient_bars(symbol, interval, df, now)
 
     df = _read_bars(symbol, interval)
     if df is None or df.empty:
@@ -916,20 +1118,33 @@ def release_warm(finished_at):
 
 # ----------------------------- Aquisição (prewarm) + log de falhas -----------------------------
 def list_failures():
-    """DataFrame com (symbol, interval) que falharam ao preencher, ordenado por
-    frequência — base para diagnóstico por ativo."""
+    """DataFrame com falhas de aquisição (fetch_failures) + barras diárias
+    pendentes (bar_failures — Yahoo serviu None, em retry). Ordenado por
+    frequência/tentativas — base para o painel de Falhas."""
     _ensure_schema()
     with _lock:
-        rows = _connect().execute(
+        f_rows = _connect().execute(
             "SELECT symbol, interval, fail_count, attempts, last_error, last_attempt_at "
             "FROM fetch_failures ORDER BY fail_count DESC, last_attempt_at DESC"
         ).fetchall()
-    if not rows:
+        b_rows = _connect().execute(
+            "SELECT symbol, date, attempts, last_attempt_at FROM bar_failures "
+            "WHERE resolved_at IS NULL ORDER BY attempts DESC, date DESC"
+        ).fetchall()
+    cols = ["symbol", "interval", "fail_count", "attempts", "last_error", "last_attempt_at"]
+    frames = []
+    if f_rows:
+        frames.append(pd.DataFrame(f_rows, columns=cols))
+    if b_rows:
+        frames.append(pd.DataFrame(
+            [{"symbol": s, "interval": f"1d · {d}", "fail_count": a, "attempts": a,
+              "last_error": "barra diária None (Yahoo)", "last_attempt_at": la}
+             for s, d, a, la in b_rows],
+            columns=cols,
+        ))
+    if not frames:
         return pd.DataFrame()
-    return pd.DataFrame(
-        rows,
-        columns=["symbol", "interval", "fail_count", "attempts", "last_error", "last_attempt_at"],
-    )
+    return pd.concat(frames, ignore_index=True)
 
 
 def db_path():
@@ -948,6 +1163,9 @@ def db_summary():
             "bars": conn.execute("SELECT COUNT(*) FROM bars").fetchone()[0],
             "fill_state": conn.execute("SELECT COUNT(*) FROM fill_state").fetchone()[0],
             "fetch_failures": conn.execute("SELECT COUNT(*) FROM fetch_failures").fetchone()[0],
+            "bar_failures": conn.execute(
+                "SELECT COUNT(*) FROM bar_failures WHERE resolved_at IS NULL"
+            ).fetchone()[0],
             "distinct_symbols": conn.execute("SELECT COUNT(DISTINCT symbol) FROM bars").fetchone()[0],
             "by_interval": conn.execute(
                 "SELECT interval, COUNT(*) FROM bars GROUP BY interval ORDER BY interval"
@@ -1167,6 +1385,17 @@ def prewarm(symbols, intervals, attempts=3, progress=None):
     (framework-agnostic: data_layer não importa streamlit)."""
     _ensure_schema()
     now = _now_brt()
+
+    # Re-tenta barras diárias pendentes (Yahoo serviu None) — ESTE é o loop
+    # "enqueue forever": cada warm (cron a cada 10min) re-questions o Yahoo por
+    # cada barra pendente até ele backfillar o valor real do pregão. Roda antes
+    # da aquisição para preencher gaps primeiro.
+    try:
+        _retry_bar_failures()
+    except Exception as e:
+        # nunca derruba o warm por causa do retry de barras
+        pass
+
     failures = []
     items = [(s, i) for s in symbols for i in intervals]
     total = len(items)
@@ -1183,6 +1412,7 @@ def prewarm(symbols, intervals, attempts=3, progress=None):
             _trim_bars_to_window(symbol, interval, df)
             _set_fill_state(symbol, interval)
             _clear_failure(symbol, interval)
+            _record_deficient_bars(symbol, interval, df, now)
             return symbol, interval, True, None
         else:
             _record_failure(symbol, interval, attempts, err)

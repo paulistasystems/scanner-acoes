@@ -387,7 +387,7 @@ function updateStatusFrom(data) {
         const dr = data.data_ready;
         let base = '';
         if (s && typeof s === 'object') {
-            base = `${s.bars ?? 0} barras · ${s.distinct_symbols ?? 0} ativos · ${s.fill_state ?? 0} preenchidos · ${s.fetch_failures ?? 0} falhas`;
+            base = `${s.bars ?? 0} barras · ${s.distinct_symbols ?? 0} ativos · ${s.fill_state ?? 0} preenchidos · ${s.fetch_failures ?? 0} falhas${s.bar_failures ? ` · ${s.bar_failures} barras pend` : ''}`;
         } else {
             base = s || '';
         }
@@ -679,12 +679,14 @@ async function loadFailures() {
         return;
     }
 
-    // Renderiza uma única linha de ação por símbolo (pode ter várias falhas).
+    // Renderiza uma linha por (símbolo+intervalo) — barras pendentes (bar_failures)
+    // vêm como intervalo "1d · <data>" e precisam de linha própria por data.
     const seen = new Set();
     const renderRows = [];
     data.forEach(row => {
-        if (seen.has(row.symbol)) return;
-        seen.add(row.symbol);
+        const key = row.symbol + '|' + (row.interval ?? '');
+        if (seen.has(key)) return;
+        seen.add(key);
         renderRows.push(row);
     });
 
