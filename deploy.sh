@@ -12,6 +12,24 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$SCRIPT_DIR"
 
+# ── Estado persistente de deploy (hashes/marcadores) ─────────────────────────
+# Os marcadores de "o que já foi enviado" vivem em .deploy_cache/ (gitignored),
+# NÃO em /tmp. /tmp no macOS é limpo pelo periodic diário (ficheiros sem acesso
+# há >3 dias) e por reboots — quando isso acontecia entre deploys, todos os
+# marcadores sumiam e o script re-enviava site-packages (rebuild Docker lento) e
+# app mesmo sem nenhuma mudança real. .deploy_cache/ persiste entre reboots.
+#
+# Migração única: transplantamos os hashes legados de /tmp (mesmo formato) para
+# .deploy_cache/, de modo que o 1º deploy após esta mudança NÃO re-envie nada
+# que já está sincronizado no servidor.
+MARKER_ROOT="$SCRIPT_DIR/.deploy_cache"
+mkdir -p "$MARKER_ROOT/php"
+[ -f /tmp/scanner_req_marker ] && [ ! -f "$MARKER_ROOT/req.sha1" ] && cp -p /tmp/scanner_req_marker "$MARKER_ROOT/req.sha1"
+[ -f /tmp/scanner_app_marker ] && [ ! -f "$MARKER_ROOT/app.sha1" ] && cp -p /tmp/scanner_app_marker "$MARKER_ROOT/app.sha1"
+if [ -d /tmp/scanner_php_markers ] && [ -z "$(ls -A "$MARKER_ROOT/php" 2>/dev/null)" ]; then
+  cp -p /tmp/scanner_php_markers/*.sha1 "$MARKER_ROOT/php/" 2>/dev/null || true
+fi
+
 # Git clean check — aborta se houver algo não commitado ou untracked
 if ! git diff --quiet HEAD 2>/dev/null; then
   echo "ERRO: há alterações não commitadas no repositório. Commit ou stash antes de deployar." >&2
@@ -248,7 +266,7 @@ fi
 # se editar só o style.css, só o style.css é re-enviado. Antes, era um único
 # hash colectivo que re-empacotava tudo ao menor toque num único ficheiro.
 PHP_DEPLOY="domains/paulista.dev/public_html/scanner"
-PHP_MARKER_DIR="/tmp/scanner_php_markers"
+PHP_MARKER_DIR="$MARKER_ROOT/php"
 mkdir -p "$PHP_MARKER_DIR"
 
 # Migrar do esquema antigo (marker colectivo) para o novo esquema per-file:
@@ -300,7 +318,7 @@ fi
 echo ""
 echo "==> Verificando dependências (site-packages)..."
 BUILD_DIR="/tmp/scanner_linux_sitepackages"
-REQ_MARKER="/tmp/scanner_req_marker"
+REQ_MARKER="$MARKER_ROOT/req.sha1"
 CURRENT_REQ_HASH=$(sha1sum requirements-py39.txt | cut -d' ' -f1)
 PREVIOUS_REQ_HASH=""
 
@@ -308,18 +326,28 @@ if [ -f "$REQ_MARKER" ]; then
   PREVIOUS_REQ_HASH=$(cat "$REQ_MARKER")
 fi
 
-if [ "$FORCE_DEPLOY" = true ] || [ "$CURRENT_REQ_HASH" != "$PREVIOUS_REQ_HASH" ] || [ ! -d "$BUILD_DIR" ]; then
+# Re-envia site-packages SÓ quando requirements mudaram (ou --force). Antes a
+# condição incluía `|| [ ! -d "$BUILD_DIR" ]`: como o BUILD_DIR vive em /tmp e é
+# limpo pelo macOS entre deploys, isso forçava rebuild+upload dos pacotes mesmo
+# sem nenhuma mudança — o servidor já tinha os pacotes corretos. O BUILD_DIR é
+# só cache de build local; se falta, é recriado dentro do bloco abaixo quando
+# realmente precisamos montar o tarball.
+if [ "$FORCE_DEPLOY" = true ] || [ "$CURRENT_REQ_HASH" != "$PREVIOUS_REQ_HASH" ]; then
   echo "   Requirements mudaram ou não foram compilados localmente. Instalando pacotes no Docker..."
   # Remove leftover root-owned files from previous docker builds.
   docker run --rm -v "$BUILD_DIR":/clean alpine sh -c 'rm -rf /clean/* /clean/.[!.]*' >/dev/null 2>&1 || true
   rm -rf "$BUILD_DIR" tmp_build_output 2>/dev/null || true
   mkdir -p "$BUILD_DIR"
 
+  # --root-user-action=ignore: o container --rm roda como root por design
+  # (descartável, isolado); o aviso "Running pip as the 'root' user..." é
+  # ruído aqui. Suportado pelo pip desde 22.1; o python:3.9-slim-bookworm
+  # traz pip 23.x. (O `pip install --upgrade pip` leva -q e não emite aviso.)
   docker run --rm \
     -v "$PWD/requirements-py39.txt":/req.txt:ro \
     -v "$BUILD_DIR":/wheels \
     python:3.9-slim-bookworm \
-    sh -c 'python -m pip install --upgrade pip -q && pip install -r /req.txt --target /wheels --no-cache-dir && echo DONE'
+    sh -c 'python -m pip install --upgrade pip -q && pip install --root-user-action=ignore -r /req.txt --target /wheels --no-cache-dir && echo DONE'
 
   echo "   Compactando site-packages em tarball (single file)..."
   SITE_TGZ="/tmp/scanner_sitepackages.tgz"
@@ -338,7 +366,7 @@ fi
 # ── 3. Upload app files only (never database) ────────────────────────────────
 echo ""
 echo "==> Subindo app para /scanner (código; DB excluído)..."
-APP_MARKER="/tmp/scanner_app_marker"
+APP_MARKER="$MARKER_ROOT/app.sha1"
 CURRENT_APP_HASH=$(find app.py warming.py warm_cron.py warm_cron_status.py data_layer.py \
   passenger_wsgi.py scanners_core.py indicators.py symbol_store.py symbols_fallback.py \
   static/ -type f -exec sha1sum {} \; | sort | sha1sum | cut -d' ' -f1)
