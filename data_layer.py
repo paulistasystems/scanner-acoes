@@ -537,12 +537,16 @@ def _retry_bar_failures():
         # CAP por ciclo: o desync de edge pode afetar um DATA inteira (ex.: 07-31
         # None para ~todos os símbolos num IP). Retentar centenas de barras a cada
         # warm (10min) encharcaria o Yahoo e adicionaria minutos ao warm. Limitamos
-        # a 20/ciclo (datas mais recentes primeiro — são as que mais importam para
-        # o scan); o restante roda no próximo ciclo. 200 pendentes → todas retentadas
+        # a 20/ciclo; o restante roda no próximo ciclo. 200 pendentes → todas retentadas
         # em ~10 ciclos (~100min), bem dentro da janela de backfill do Yahoo.
+        # Ordenação LRU (last_attempt_at ASC): com date DESC, as ~20 linhas mais
+        # novas (ordem arbitrária em empate de data) eram as únicas retentadas a
+        # cada ciclo — 188 pendências de 07-31 ficavam congeladas atrás de 100 de
+        # 08-10 (attempts parados em ~80). LRU dá a TODAS a vez, uma rodada por
+        # fila cheia; datas recém-enfileiradas esperam sua primeira rodada.
         rows = _connect().execute(
             "SELECT symbol, date FROM bar_failures WHERE resolved_at IS NULL "
-            "ORDER BY date DESC LIMIT 20"
+            "ORDER BY last_attempt_at ASC LIMIT 20"
         ).fetchall()
     if not rows:
         return 0
