@@ -55,3 +55,6 @@ scanner.docker.db-*
 # Passenger Standalone (container bind-mount)
 passenger.*.pid
 passenger.*.log
+
+# Artefatos npm órfãos (app não usa Node; só sujeira de ferramentas pontuais)
+node_modules/
