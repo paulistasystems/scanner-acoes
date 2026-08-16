@@ -1139,7 +1139,7 @@ def list_failures():
             "FROM fetch_failures ORDER BY fail_count DESC, last_attempt_at DESC"
         ).fetchall()
         b_rows = _connect().execute(
-            "SELECT symbol, date, attempts, last_attempt_at FROM bar_failures "
+            "SELECT symbol, date, attempts, last_error, last_attempt_at FROM bar_failures "
             "WHERE resolved_at IS NULL ORDER BY attempts DESC, date DESC"
         ).fetchall()
     cols = ["symbol", "interval", "fail_count", "attempts", "last_error", "last_attempt_at"]
@@ -1149,8 +1149,8 @@ def list_failures():
     if b_rows:
         frames.append(pd.DataFrame(
             [{"symbol": s, "interval": f"1d · {d}", "fail_count": a, "attempts": a,
-              "last_error": "barra diária None (Yahoo)", "last_attempt_at": la}
-             for s, d, a, la in b_rows],
+              "last_error": le or "barra diária None (Yahoo)", "last_attempt_at": la}
+             for s, d, a, le, la in b_rows],
             columns=cols,
         ))
     if not frames:
@@ -1191,22 +1191,56 @@ def db_summary():
 
 
 def retry_symbol(symbol):
-    """Limpa falha e fill_state de um único símbolo para retentar."""
+    """Limpa falha e fill_state de um único símbolo para retentar. Barras diárias
+    pendentes (bar_failures) do símbolo são retentadas NA HORA via fetch dirigido
+    por data (_fetch_one_daily_bar — mesmo caminho do _retry_bar_failures): a que
+    vier populada é upsertada + resolvida (sai do painel imediatamente); a que
+    seguir None permanece na fila do warm (attempts++ visível no painel)."""
     _ensure_schema()
     sym = (symbol or "").strip().upper()
     if not sym:
-        return False
+        return {"success": False, "bars_resolved": 0, "bars_pending": 0}
     with _lock:
         conn = _connect()
         conn.execute("DELETE FROM fetch_failures WHERE symbol=?", (sym,))
         conn.execute("DELETE FROM fill_state WHERE symbol=?", (sym,))
+        # Cap 5 datas: o request HTTP é síncrono — cada data custa até 2 fetches
+        # (proxy + query2); mais datas que isso fica para a fila LRU do warm.
+        pending = [r[0] for r in conn.execute(
+            "SELECT date FROM bar_failures WHERE symbol=? AND interval='1d' "
+            "AND resolved_at IS NULL ORDER BY date DESC LIMIT 5", (sym,)
+        ).fetchall()]
         conn.commit()
-    return True
+    resolved = 0
+    for date in pending:
+        bar = _fetch_one_daily_bar(sym, date)
+        if bar is not None:
+            one = pd.DataFrame(
+                [{"Open": bar["open"], "High": bar["high"], "Low": bar["low"],
+                  "Close": bar["close"], "Volume": bar["volume"]}],
+                index=pd.DatetimeIndex([bar["ts"]]),
+            )
+            _upsert_bars(sym, "1d", one)
+            _resolve_bar_failure(sym, "1d", date)
+            _clear_failure(sym, "1d")
+            resolved += 1
+        else:
+            _record_bar_failure(sym, "1d", date, "ainda None após retry")
+    with _lock:
+        still = _connect().execute(
+            "SELECT COUNT(*) FROM bar_failures WHERE symbol=? AND resolved_at IS NULL",
+            (sym,),
+        ).fetchone()[0]
+    return {"success": True, "bars_resolved": resolved, "bars_pending": still}
 
 
 def retry_failures():
     """Limpa o registro de falhas e invalida o fill_state para que todos os
-    símbolos que falharam sejam retentados na próxima aquisição."""
+    símbolos que falharam sejam retentados na próxima aquisição. Barras diárias
+    pendentes (bar_failures) NÃO são apagadas — a fila é o mecanismo de retry do
+    warm (_retry_bar_failures, LRU 20/ciclo no início de cada prewarm); apagar
+    seria desistir do backfill. O retorno contabiliza quantas seguem pendentes
+    para o warm retentar (o botão 'Retentar Todas' dispara o warm em seguida)."""
     _ensure_schema()
     with _lock:
         conn = _connect()
@@ -1214,8 +1248,18 @@ def retry_failures():
         conn.execute("DELETE FROM fetch_failures")
         for s in symbols:
             conn.execute("DELETE FROM fill_state WHERE symbol=?", (s,))
+        bar_symbols = [r[0] for r in conn.execute(
+            "SELECT DISTINCT symbol FROM bar_failures WHERE resolved_at IS NULL"
+        ).fetchall()]
+        bars_pending = _connect().execute(
+            "SELECT COUNT(*) FROM bar_failures WHERE resolved_at IS NULL"
+        ).fetchone()[0]
         conn.commit()
-    return len(symbols)
+    return {
+        "fetch_retried": len(symbols),
+        "bar_symbols": len(bar_symbols),
+        "bars_pending": bars_pending,
+    }
 
 
 # Intervalos exigidos pelos scanners web (inclui Abertura 15m).

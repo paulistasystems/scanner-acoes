@@ -281,7 +281,10 @@ function updateStatusFrom(data) {
         const dr = data.data_ready;
         let base = '';
         if (s && typeof s === 'object') {
-            base = `${s.bars ?? 0} barras · ${s.distinct_symbols ?? 0} ativos · ${s.fill_state ?? 0} preenchidos · ${s.fetch_failures ?? 0} falhas`;
+            // "falhas" = MESMO número que a aba Falhas do painel principal exibe
+            // (fetch_failures + bar_failures não-resolvidas).
+            const totalFailures = (s.fetch_failures ?? 0) + (s.bar_failures ?? 0);
+            base = `${s.bars ?? 0} barras · ${s.distinct_symbols ?? 0} ativos · ${s.fill_state ?? 0} preenchidos · ${totalFailures} falhas${s.bar_failures ? ` (${s.bar_failures} barras pend)` : ''}`;
         } else {
             base = s || '';
         }

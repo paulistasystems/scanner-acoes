@@ -217,7 +217,8 @@ def main(argv):
     print(
         f"[{ended}] warm_cron fim: "
         f"{elapsed:.0f}s | barras={s['bars']} fill_state={s['fill_state']} "
-        f"distinct_symbols={s['distinct_symbols']} failures={s['fetch_failures']}",
+        f"distinct_symbols={s['distinct_symbols']} failures={s['fetch_failures']} "
+        f"bar_failures={s['bar_failures']}",
         flush=True,
     )
     if failures:
@@ -237,6 +238,7 @@ def main(argv):
             "fill_state": s.get("fill_state"),
             "distinct_symbols": s.get("distinct_symbols"),
             "fetch_failures": s.get("fetch_failures"),
+            "bar_failures": s.get("bar_failures"),
         },
         "progress_done": total,
         "progress_total": total,
