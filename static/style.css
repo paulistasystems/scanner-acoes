@@ -269,6 +269,11 @@ tr:hover {
 .panel-badge.empty   { background: rgba(255, 255, 255, 0.08); color: #aaa; }
 .panel-badge.error   { background: rgba(255, 82, 82, 0.15); color: var(--error); }
 
+/* Resumo consolidado: impede que tabelas largas transbordem o painel */
+#summary-content {
+    overflow-x: auto;
+}
+
 #btn-run-all:disabled {
     opacity: 0.6;
     cursor: not-allowed;
