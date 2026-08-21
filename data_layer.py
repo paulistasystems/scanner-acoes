@@ -535,30 +535,27 @@ def _fetch_one_daily_bar(symbol, date_str):
     return None
 
 
-def _retry_bar_failures():
+def _retry_bar_failures(progress=None):
     """Re-tenta todas as barras diárias pendentes. Chamado no início de cada prewarm
-    (cron a cada 10min) — ESTE é o loop "enqueue forever": a cada ciclo re-questions
-    o Yahoo por cada barra None, até ele backfillar. Resolve (upsert + marca) em
-    sucesso; incrementa tentativas em falha (visível no falhas). Retorna n resolvidas."""
+    (cron a cada 10min). Como o prewarm agora é serial e este loop roda em subprocesso
+    autônomo, processamos TODAS as pendências de uma vez (sem cap de ciclo) — o botão
+    'Retentar Todas' dispara um warm e espera-se que as barras sumam do painel. Resolve
+    (upsert + marca) em sucesso; abandona (resolve com motivo) as que o Yahoo segue
+    devolvendo None, para não realimentar o loop 'enqueue forever'. `progress(done,
+    total, symbol, ok)` espelha o símbolo atual no warm_state (visível no status)."""
     _ensure_schema()
     with _lock:
-        # CAP por ciclo: o desync de edge pode afetar um DATA inteira (ex.: 07-31
-        # None para ~todos os símbolos num IP). Retentar centenas de barras a cada
-        # warm (10min) encharcaria o Yahoo e adicionaria minutos ao warm. Limitamos
-        # a 20/ciclo; o restante roda no próximo ciclo. 200 pendentes → todas retentadas
-        # em ~10 ciclos (~100min), bem dentro da janela de backfill do Yahoo.
-        # Ordenação LRU (last_attempt_at ASC): com date DESC, as ~20 linhas mais
-        # novas (ordem arbitrária em empate de data) eram as únicas retentadas a
-        # cada ciclo — 188 pendências de 07-31 ficavam congeladas atrás de 100 de
-        # 08-10 (attempts parados em ~80). LRU dá a TODAS a vez, uma rodada por
-        # fila cheia; datas recém-enfileiradas esperam sua primeira rodada.
+        # LRU (last_attempt_at ASC): dá a TODAS as pendências a vez numa rodada;
+        # datas recém-enfileiradas esperam sua primeira rodada.
         rows = _connect().execute(
             "SELECT symbol, date FROM bar_failures WHERE resolved_at IS NULL "
-            "ORDER BY last_attempt_at ASC LIMIT 20"
+            "ORDER BY last_attempt_at ASC"
         ).fetchall()
     if not rows:
         return 0
+    total = len(rows)
     resolved = 0
+    done = 0
     for symbol, date in rows:
         bar = _fetch_one_daily_bar(symbol, date)
         if bar is not None:
@@ -577,6 +574,12 @@ def _retry_bar_failures():
             # loop "enqueue forever". Gaps legítimos/transitórios são resolvidos
             # na branch acima quando o Yahoo finalmente backfillar.
             _resolve_bar_failure(symbol, "1d", date, "abandonada: Yahoo segue None")
+        done += 1
+        if progress is not None:
+            try:
+                progress(done, total, symbol, bar is not None)
+            except Exception:
+                pass
     return resolved
 
 
@@ -1454,12 +1457,13 @@ def prewarm(symbols, intervals, attempts=3, progress=None):
     _ensure_schema()
     now = _now_brt()
 
-    # Re-tenta barras diárias pendentes (Yahoo serviu None) — ESTE é o loop
-    # "enqueue forever": cada warm (cron a cada 10min) re-questions o Yahoo por
-    # cada barra pendente até ele backfillar o valor real do pregão. Roda antes
-    # da aquisição para preencher gaps primeiro.
+    # Re-tenta barras diárias pendentes (Yahoo serviu None) antes da aquisição,
+    # para preencher gaps primeiro. Processa TODAS as pendências (serial) e
+    # abandona as que o Yahoo segue devolvendo None. Espelha o símbolo atual no
+    # warm_state via `progress`, para o status da UI mostrar o que está sendo
+    # retentado (e não ficar em branco durante esta fase).
     try:
-        _retry_bar_failures()
+        _retry_bar_failures(progress=progress)
     except Exception as e:
         # nunca derruba o warm por causa do retry de barras
         pass

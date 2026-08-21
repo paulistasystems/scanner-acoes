@@ -482,9 +482,14 @@ async function pollWarmDone(statusEl) {
             const wp = data.warm_progress;
             if (statusEl && wp && wp.last_symbol) {
                 statusEl.textContent = `🔍 ${wp.last_symbol}  [${wp.done}/${wp.total}]`;
+            } else if (statusEl && (!wp || (!wp.running && !data.warming))) {
+                statusEl.textContent = '⏳ aguardando warm...';
             }
-            if (!data.warming && wp && wp.finished_at) return;
-            if (!data.warming && wp && !wp.running && wp.done >= wp.total) return;
+            // Refresca o painel de falhas a cada 10s para que barras abandonadas
+            // sumam do painel enquanto o warm roda (não espera o warm inteiro).
+            if (i % 10 === 0) loadFailures();
+            if (!data.warming && wp && wp.finished_at) { loadFailures(); return; }
+            if (!data.warming && wp && !wp.running && wp.done >= wp.total) { loadFailures(); return; }
         } catch (_) {}
     }
 }
