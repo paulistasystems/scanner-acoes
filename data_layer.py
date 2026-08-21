@@ -1473,26 +1473,24 @@ def prewarm(symbols, intervals, attempts=3, progress=None):
             _record_failure(symbol, interval, attempts, err)
             return symbol, interval, False, err
 
-    import concurrent.futures
     done = 0
-    # Processamos com 5 workers paralelos para que ativos problemáticos
-    # (timeouts) não congelem todo o aquecimento.
-    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
-        futures = {executor.submit(process_item, s, i): (s, i) for s, i in items}
-        for future in concurrent.futures.as_completed(futures):
-            s, i = futures[future]
-            try:
-                symbol, interval, ok, err = future.result()
-            except Exception as e:
-                # Catch-all se process_item quebrar por erro imprevisto
-                _record_failure(s, i, attempts, repr(e))
-                symbol, interval, ok, err = s, i, False, repr(e)
+    # Serial: um (symbol, interval) de cada vez — só busca o próximo após o
+    # anterior estar completamente resolvido (sucesso ou falha registrada).
+    # Evita pressão concorrente sobre o egress/Yahoo (throttle/ReadTimeout em
+    # lote) e mantém a ordem estável no painel de progresso.
+    for s, i in items:
+        try:
+            symbol, interval, ok, err = process_item(s, i)
+        except Exception as e:
+            # Catch-all se process_item quebrar por erro imprevisto
+            _record_failure(s, i, attempts, repr(e))
+            symbol, interval, ok, err = s, i, False, repr(e)
 
-            if not ok:
-                failures.append((symbol, interval))
+        if not ok:
+            failures.append((symbol, interval))
 
-            done += 1
-            if progress is not None:
-                progress(done, total, symbol, ok)
+        done += 1
+        if progress is not None:
+            progress(done, total, symbol, ok)
 
     return failures
