@@ -318,18 +318,20 @@ function setupEventListeners() {
     document.getElementById('btn-copy-prompt').addEventListener('click', copyPrompt);
 
     const btnRetryFailures = document.getElementById('btn-retry-failures');
+    const retryStatus = document.getElementById('retry-status');
     if (btnRetryFailures) {
         btnRetryFailures.addEventListener('click', async () => {
             if (!confirm('Deseja retentar todos os ativos com falha?\n\nIsso limpará o registro de falhas, baixará os dados novamente e executará os scanners automaticamente.')) return;
             btnRetryFailures.disabled = true;
             btnRetryFailures.textContent = '⏳ Retentando...';
+            if (retryStatus) retryStatus.textContent = '';
             try {
                 await fetch(`${BASE}/api/retry_failures`, { method: 'POST' });
                 await triggerWarm();
                 await loadFailures();
                 updateStatus();
                 btnRetryFailures.textContent = '⏳ Aguardando warm...';
-                await pollWarmDone();
+                await pollWarmDone(retryStatus);
                 btnRetryFailures.textContent = '⏳ Executando scanners...';
                 await startup();
             } catch (e) {
@@ -338,6 +340,7 @@ function setupEventListeners() {
             } finally {
                 btnRetryFailures.disabled = false;
                 btnRetryFailures.textContent = '🔄 Retentar Todas';
+                if (retryStatus) retryStatus.textContent = '';
             }
         });
     }
@@ -469,7 +472,7 @@ async function triggerWarm() {
     updateStatus();
 }
 
-async function pollWarmDone() {
+async function pollWarmDone(statusEl) {
     for (let i = 0; i < 600; i++) {
         await new Promise(r => setTimeout(r, 1000));
         try {
@@ -477,6 +480,9 @@ async function pollWarmDone() {
             const data = await res.json();
             updateStatusFrom(data);
             const wp = data.warm_progress;
+            if (statusEl && wp && wp.last_symbol) {
+                statusEl.textContent = `🔍 ${wp.last_symbol}  [${wp.done}/${wp.total}]`;
+            }
             if (!data.warming && wp && wp.finished_at) return;
             if (!data.warming && wp && !wp.running && wp.done >= wp.total) return;
         } catch (_) {}
