@@ -418,15 +418,23 @@ def _record_bar_failure(symbol, interval, date_str, err=""):
         conn.commit()
 
 
-def _resolve_bar_failure(symbol, interval, date_str):
-    """Barra finalmente veio com valor real — marca resolvida."""
+def _resolve_bar_failure(symbol, interval, date_str, reason=None):
+    """Barra finalmente veio com valor real (ou foi abandonada) — marca resolvida.
+    `reason` opcional é gravado em last_error para trilha de auditoria no DB."""
     _ensure_schema()
     with _lock:
         conn = _connect()
-        conn.execute(
-            "UPDATE bar_failures SET resolved_at=? WHERE symbol=? AND interval=? AND date=?",
-            (_now_brt().isoformat(), symbol, interval, date_str),
-        )
+        if reason is not None:
+            conn.execute(
+                "UPDATE bar_failures SET resolved_at=?, last_error=? "
+                "WHERE symbol=? AND interval=? AND date=?",
+                (_now_brt().isoformat(), reason, symbol, interval, date_str),
+            )
+        else:
+            conn.execute(
+                "UPDATE bar_failures SET resolved_at=? WHERE symbol=? AND interval=? AND date=?",
+                (_now_brt().isoformat(), symbol, interval, date_str),
+            )
         conn.commit()
 
 
@@ -1236,11 +1244,13 @@ def retry_symbol(symbol):
 
 def retry_failures():
     """Limpa o registro de falhas e invalida o fill_state para que todos os
-    símbolos que falharam sejam retentados na próxima aquisição. Barras diárias
-    pendentes (bar_failures) NÃO são apagadas — a fila é o mecanismo de retry do
-    warm (_retry_bar_failures, LRU 20/ciclo no início de cada prewarm); apagar
-    seria desistir do backfill. O retorno contabiliza quantas seguem pendentes
-    para o warm retentar (o botão 'Retentar Todas' dispara o warm em seguida)."""
+    símbolos que falharam sejam retentados na próxima aquisição. Além disso,
+    retenta IMEDIATAMENTE (sem cap de ciclo) todas as barras diárias pendentes
+    (bar_failures) — o botão 'Retentar Todas' é uma ação explícita do usuário:
+    as que o Yahoo devolver preenchidas são upsertadas + resolvidas (sai do
+    painel); as que continuarem None são explicitamente abandonadas (resolvidas
+    com motivo) para não poluir o painel nem alimentar o loop 'enqueue forever'
+    do warm. Retorna contagem de símbolos, barras resolvidas e abandonadas."""
     _ensure_schema()
     with _lock:
         conn = _connect()
@@ -1248,17 +1258,34 @@ def retry_failures():
         conn.execute("DELETE FROM fetch_failures")
         for s in symbols:
             conn.execute("DELETE FROM fill_state WHERE symbol=?", (s,))
-        bar_symbols = [r[0] for r in conn.execute(
-            "SELECT DISTINCT symbol FROM bar_failures WHERE resolved_at IS NULL"
-        ).fetchall()]
-        bars_pending = _connect().execute(
-            "SELECT COUNT(*) FROM bar_failures WHERE resolved_at IS NULL"
-        ).fetchone()[0]
+        pending_bars = conn.execute(
+            "SELECT symbol, date FROM bar_failures WHERE resolved_at IS NULL"
+        ).fetchall()
         conn.commit()
+    resolved = 0
+    abandoned = 0
+    for sym, date in pending_bars:
+        bar = _fetch_one_daily_bar(sym, date)
+        if bar is not None:
+            one = pd.DataFrame(
+                [{"Open": bar["open"], "High": bar["high"], "Low": bar["low"],
+                  "Close": bar["close"], "Volume": bar["volume"]}],
+                index=pd.DatetimeIndex([bar["ts"]]),
+            )
+            _upsert_bars(sym, "1d", one)
+            _resolve_bar_failure(sym, "1d", date)
+            _clear_failure(sym, "1d")
+            resolved += 1
+        else:
+            # Abandona explicitamente: Yahoo não devolveu a barra após retry
+            # direto do usuário — sai do painel e não volta ao loop do warm.
+            _resolve_bar_failure(sym, "1d", date, "abandonada pelo Retentar Todas")
+            abandoned += 1
     return {
         "fetch_retried": len(symbols),
-        "bar_symbols": len(bar_symbols),
-        "bars_pending": bars_pending,
+        "bar_symbols": len(pending_bars),
+        "bars_resolved": resolved,
+        "bars_abandoned": abandoned,
     }
 
 
