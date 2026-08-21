@@ -473,6 +473,10 @@ async function triggerWarm() {
 }
 
 async function pollWarmDone(statusEl) {
+    // Mantém o último símbolo visto: o warm é muito rápido (dados já preenchidos
+    // → não há fetch real, só tick pelos itens em cache) e o last_symbol some em
+    // ~1s. Segurar o valor evita que a barra de status pisque em branco.
+    let lastSeen = '';
     for (let i = 0; i < 600; i++) {
         await new Promise(r => setTimeout(r, 1000));
         try {
@@ -480,16 +484,23 @@ async function pollWarmDone(statusEl) {
             const data = await res.json();
             updateStatusFrom(data);
             const wp = data.warm_progress;
-            if (statusEl && wp && wp.last_symbol) {
-                statusEl.textContent = `🔍 ${wp.last_symbol}  [${wp.done}/${wp.total}]`;
-            } else if (statusEl && (!wp || (!wp.running && !data.warming))) {
-                statusEl.textContent = '⏳ aguardando warm...';
+            if (wp && wp.last_symbol) lastSeen = wp.last_symbol;
+            if (statusEl) {
+                if (wp && wp.running && lastSeen) {
+                    statusEl.textContent = `🔍 ${lastSeen}  [${wp.done}/${wp.total}]`;
+                } else if (wp && wp.running) {
+                    statusEl.textContent = '⏳ iniciando aquecimento...';
+                } else if (lastSeen) {
+                    statusEl.textContent = `✅ último: ${lastSeen}`;
+                } else {
+                    statusEl.textContent = '⏳ aguardando warm...';
+                }
             }
             // Refresca o painel de falhas a cada 10s para que barras abandonadas
             // sumam do painel enquanto o warm roda (não espera o warm inteiro).
             if (i % 10 === 0) loadFailures();
-            if (!data.warming && wp && wp.finished_at) { loadFailures(); return; }
-            if (!data.warming && wp && !wp.running && wp.done >= wp.total) { loadFailures(); return; }
+            if (!data.warming && wp && wp.finished_at) { loadFailures(); break; }
+            if (!data.warming && wp && !wp.running && wp.done >= wp.total) { loadFailures(); break; }
         } catch (_) {}
     }
 }
