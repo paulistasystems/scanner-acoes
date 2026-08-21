@@ -572,7 +572,11 @@ def _retry_bar_failures():
             _clear_failure(symbol, "1d")
             resolved += 1
         else:
-            _record_bar_failure(symbol, "1d", date, "ainda None após retry")
+            # Yahoo não devolveu a barra nem após retry do warm: abandona
+            # (resolve com motivo) para sair do painel e não realimentar o
+            # loop "enqueue forever". Gaps legítimos/transitórios são resolvidos
+            # na branch acima quando o Yahoo finalmente backfillar.
+            _resolve_bar_failure(symbol, "1d", date, "abandonada: Yahoo segue None")
     return resolved
 
 
@@ -1244,13 +1248,12 @@ def retry_symbol(symbol):
 
 def retry_failures():
     """Limpa o registro de falhas e invalida o fill_state para que todos os
-    símbolos que falharam sejam retentados na próxima aquisição. Além disso,
-    retenta IMEDIATAMENTE (sem cap de ciclo) todas as barras diárias pendentes
-    (bar_failures) — o botão 'Retentar Todas' é uma ação explícita do usuário:
-    as que o Yahoo devolver preenchidas são upsertadas + resolvidas (sai do
-    painel); as que continuarem None são explicitamente abandonadas (resolvidas
-    com motivo) para não poluir o painel nem alimentar o loop 'enqueue forever'
-    do warm. Retorna contagem de símbolos, barras resolvidas e abandonadas."""
+    símbolos que falharam sejam retentados na próxima aquisição. É RÁPIDO
+    (síncrono no request HTTP) — NÃO faz fetch aqui. As barras diárias pendentes
+    (bar_failures) são resolvidas/abandonadas pelo warm em seguida
+    (_retry_bar_failures, chamado no início de cada prewarm, agora serial): o
+    botão 'Retentar Todas' dispara o warm, que tenta cada barra e remove as que
+    o Yahoo não devolve. Retorna contagens para o frontend."""
     _ensure_schema()
     with _lock:
         conn = _connect()
@@ -1258,34 +1261,17 @@ def retry_failures():
         conn.execute("DELETE FROM fetch_failures")
         for s in symbols:
             conn.execute("DELETE FROM fill_state WHERE symbol=?", (s,))
-        pending_bars = conn.execute(
-            "SELECT symbol, date FROM bar_failures WHERE resolved_at IS NULL"
-        ).fetchall()
+        bar_symbols = [r[0] for r in conn.execute(
+            "SELECT DISTINCT symbol FROM bar_failures WHERE resolved_at IS NULL"
+        ).fetchall()]
+        bars_pending = _connect().execute(
+            "SELECT COUNT(*) FROM bar_failures WHERE resolved_at IS NULL"
+        ).fetchone()[0]
         conn.commit()
-    resolved = 0
-    abandoned = 0
-    for sym, date in pending_bars:
-        bar = _fetch_one_daily_bar(sym, date)
-        if bar is not None:
-            one = pd.DataFrame(
-                [{"Open": bar["open"], "High": bar["high"], "Low": bar["low"],
-                  "Close": bar["close"], "Volume": bar["volume"]}],
-                index=pd.DatetimeIndex([bar["ts"]]),
-            )
-            _upsert_bars(sym, "1d", one)
-            _resolve_bar_failure(sym, "1d", date)
-            _clear_failure(sym, "1d")
-            resolved += 1
-        else:
-            # Abandona explicitamente: Yahoo não devolveu a barra após retry
-            # direto do usuário — sai do painel e não volta ao loop do warm.
-            _resolve_bar_failure(sym, "1d", date, "abandonada pelo Retentar Todas")
-            abandoned += 1
     return {
         "fetch_retried": len(symbols),
-        "bar_symbols": len(pending_bars),
-        "bars_resolved": resolved,
-        "bars_abandoned": abandoned,
+        "bar_symbols": len(bar_symbols),
+        "bars_pending": bars_pending,
     }
 
 

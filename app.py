@@ -412,8 +412,7 @@ def api_retry_failures():
         "success": True,
         "retried": res["fetch_retried"],
         "bar_symbols": res["bar_symbols"],
-        "bars_resolved": res["bars_resolved"],
-        "bars_abandoned": res["bars_abandoned"],
+        "bars_pending": res["bars_pending"],
     })
 
 @app.route('/api/retry_symbol', methods=['POST'])
